@@ -74,7 +74,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(self.run_cli("snapshot", "--group", "quick-chat", "--usage", "10.2")[0], 0)
 
-        code, out, err = self.run_cli("report", "--group", "quick-chat")
+        code, out, err = self.run_cli("report", "--group", "quick-chat", "--lang", "en")
         self.assertEqual(code, 0, err)
         self.assertIn("quick-chat", out)
         self.assertIn("0.2%", out)
@@ -196,6 +196,24 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertIn("Codex 本地日志用量报告", report)
         self.assertIn("220", report)
+
+    def test_auto_language_uses_locale(self):
+        self.run_cli("init")
+        old_env = {key: os.environ.get(key) for key in ("LC_ALL", "LC_MESSAGES", "LANGUAGE", "LANG")}
+        try:
+            for key in old_env:
+                os.environ.pop(key, None)
+            os.environ["LANG"] = "zh_CN.UTF-8"
+            code, out, err = self.run_cli("report", "--lang", "auto")
+        finally:
+            for key, value in old_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+        self.assertEqual(code, 0, err)
+        self.assertIn("已记录的 Codex 用量估算报告", out)
+        self.assertIn("没有匹配的记录", out)
 
 
 if __name__ == "__main__":

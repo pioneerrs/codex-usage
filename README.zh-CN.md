@@ -90,11 +90,17 @@ codex-usage export --format csv --output usage.csv
 ## 语言切换
 
 ```bash
+codex-usage codex report --lang auto
 codex-usage codex report --lang zh
+codex-usage codex report --lang en
+codex-usage report --lang auto
 codex-usage report --lang zh
+codex-usage report --lang en
 ```
 
-在 `.codex-usage/config.json` 中可设置 `defaultLanguage` 为 `en` 或 `zh`。
+在 `.codex-usage/config.json` 中可设置 `defaultLanguage` 为 `auto`、`en` 或 `zh`。
+
+`auto` 跟随终端 locale。Codex/Skill 集成可以根据用户提示传入 `--lang zh` 或 `--lang en`。
 
 ## Transcript 标记
 

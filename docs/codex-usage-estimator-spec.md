@@ -199,7 +199,7 @@ type TurnRecord = {
 {
   "version": 1,
   "defaultEncoding": "o200k_base",
-  "defaultLanguage": "en",
+  "defaultLanguage": "auto",
   "defaultModel": "unknown",
   "defaultMode": "unknown",
   "multipliers": {
@@ -782,6 +782,7 @@ v0.1 完成时，用户应能：
 ```bash
 codex-usage codex report --today
 codex-usage codex report --date 2026-05-10
+codex-usage codex report --lang zh
 codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 ```
 

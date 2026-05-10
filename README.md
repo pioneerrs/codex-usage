@@ -91,11 +91,17 @@ The `codex` commands read `token_count` events from these files.
 ## Language
 
 ```bash
+codex-usage codex report --lang auto
 codex-usage codex report --lang zh
+codex-usage codex report --lang en
+codex-usage report --lang auto
 codex-usage report --lang zh
+codex-usage report --lang en
 ```
 
-Set `defaultLanguage` in `.codex-usage/config.json` to `en` or `zh`.
+Set `defaultLanguage` in `.codex-usage/config.json` to `auto`, `en`, or `zh`.
+
+`auto` follows the terminal locale. Codex/Skill integrations can pass `--lang zh` or `--lang en` from the user prompt.
 
 ## Transcript Markers
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -90,13 +91,25 @@ TEXT = {
 
 def normalize_lang(lang: Optional[str]) -> str:
     if not lang:
-        return "en"
+        return _detect_lang_from_locale()
     normalized = lang.lower()
+    if normalized == "auto":
+        return _detect_lang_from_locale()
     if normalized in ("zh-cn", "zh_hans", "zh-hans", "cn"):
         return "zh"
     if normalized not in TEXT:
-        raise UsageError('Unsupported language. Use "en" or "zh".')
+        raise UsageError('Unsupported language. Use "auto", "en", or "zh".')
     return normalized
+
+
+def _detect_lang_from_locale() -> str:
+    for key in ("LC_ALL", "LC_MESSAGES", "LANGUAGE", "LANG"):
+        value = os.environ.get(key, "").lower()
+        if not value:
+            continue
+        if value.startswith("zh") or "zh_cn" in value or "zh-" in value:
+            return "zh"
+    return "en"
 
 
 def parse_datetime_filter(value: Optional[str], end_of_day: bool = False) -> Optional[datetime]:

@@ -163,8 +163,8 @@ def add_report_filters(parser: argparse.ArgumentParser, include_lang: bool = Tru
     if include_lang:
         parser.add_argument(
             "--lang",
-            choices=("en", "zh"),
-            help="Output language. Defaults to config defaultLanguage.",
+            choices=("auto", "en", "zh"),
+            help="Output language. Defaults to config defaultLanguage; auto follows locale.",
         )
 
 
@@ -184,8 +184,8 @@ def add_codex_log_filters(parser: argparse.ArgumentParser, include_lang: bool = 
     if include_lang:
         parser.add_argument(
             "--lang",
-            choices=("en", "zh"),
-            help="Output language. Defaults to config defaultLanguage.",
+            choices=("auto", "en", "zh"),
+            help="Output language. Defaults to config defaultLanguage; auto follows locale.",
         )
 
 
@@ -341,7 +341,7 @@ def cmd_turn_add(args: argparse.Namespace) -> None:
 def cmd_report(args: argparse.Namespace) -> None:
     data_dir = storage_dir_from(args.data_dir)
     config = load_config(data_dir)
-    lang = normalize_lang(args.lang or config.get("defaultLanguage", "en"))
+    lang = normalize_lang(args.lang or config.get("defaultLanguage", "auto"))
     groups = load_groups(data_dir)
     snapshots = load_snapshots(data_dir)
     turns = load_turns(data_dir)
@@ -382,7 +382,7 @@ def cmd_codex_report(args: argparse.Namespace) -> None:
         config = load_config(data_dir)
     except UsageError:
         config = {}
-    lang = normalize_lang(args.lang or config.get("defaultLanguage", "en"))
+    lang = normalize_lang(args.lang or config.get("defaultLanguage", "auto"))
     report = _codex_report_from_args(args)
     print(render_codex_report(report, lang=lang))
 

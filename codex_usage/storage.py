@@ -14,7 +14,7 @@ DEFAULT_DIR = ".codex-usage"
 DEFAULT_CONFIG = {
     "version": 1,
     "defaultEncoding": "o200k_base",
-    "defaultLanguage": "en",
+    "defaultLanguage": "auto",
     "defaultModel": "unknown",
     "defaultMode": "unknown",
     "multipliers": {
