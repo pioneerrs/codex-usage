@@ -4,22 +4,11 @@ Local CLI for estimating Codex subscription usage from visible transcripts.
 
 [中文文档](README.zh-CN.md)
 
-This project is intentionally built so a user can ask an AI coding agent to clone it and run one command.
-
-## AI Agent Entry Point
+## Run
 
 ```bash
 ./run.sh
 ```
-
-That command will:
-
-- create `.venv`
-- install the package in editable mode
-- verify dependencies with `codex-usage doctor`
-- run a complete isolated demo
-
-Manual equivalent:
 
 ```bash
 ./scripts/bootstrap.sh
@@ -27,7 +16,7 @@ Manual equivalent:
 ./scripts/check.sh
 ```
 
-## Human Quick Start
+## Quick Start
 
 ```bash
 python3 -m venv .venv
@@ -40,7 +29,7 @@ python3 -m venv .venv
 .venv/bin/codex-usage report --group quick-chat
 ```
 
-## What It Records
+## Records
 
 - task groups
 - manual subscription usage snapshots
@@ -52,7 +41,7 @@ python3 -m venv .venv
 
 All token values are estimated from locally visible text. They are not OpenAI billing tokens or Codex internal token counts.
 
-## Main Commands
+## Commands
 
 ```bash
 codex-usage init
@@ -69,13 +58,11 @@ codex-usage export --format csv --output usage.csv
 
 ## Language
 
-Reports default to English. Use `--lang zh` for Chinese output:
-
 ```bash
 codex-usage report --lang zh
 ```
 
-You can also set `defaultLanguage` in `.codex-usage/config.json` to `en` or `zh`.
+Set `defaultLanguage` in `.codex-usage/config.json` to `en` or `zh`.
 
 ## Transcript Markers
 
@@ -93,11 +80,7 @@ Tool output
 Visible file context
 ```
 
-If no markers are present, the whole file is treated as assistant-visible text by default.
-
 ## Storage
-
-By default data is stored in:
 
 ```text
 .codex-usage/
@@ -109,15 +92,11 @@ By default data is stored in:
 
 `.codex-usage/` is ignored by git because it may contain personal transcripts and usage notes.
 
-## Codex Integration Direction
+## Codex Integration
 
-The intended integration model is:
-
-```text
-CLI core + Codex Skill + Codex Plugin packaging
-```
-
-The CLI is the durable open-source engine. A Codex Skill can teach Codex when and how to call the CLI, and a Plugin can package the skill, scripts, and manifest for installation.
+- CLI core
+- Codex Skill
+- Codex Plugin packaging
 
 ## License
 

@@ -4,22 +4,11 @@
 
 [English](README.md)
 
-这个项目特意做成了适合 AI coding agent 拉取并一条命令跑起来的形态。
-
-## AI Agent 入口
+## 运行
 
 ```bash
 ./run.sh
 ```
-
-这个命令会：
-
-- 创建 `.venv`
-- 以 editable 模式安装项目
-- 通过 `codex-usage doctor` 检查依赖
-- 在临时目录里跑完整 demo
-
-等价的手动命令：
 
 ```bash
 ./scripts/bootstrap.sh
@@ -68,13 +57,11 @@ codex-usage export --format csv --output usage.csv
 
 ## 语言切换
 
-报告默认输出英文。使用 `--lang zh` 输出中文：
-
 ```bash
 codex-usage report --lang zh
 ```
 
-也可以在 `.codex-usage/config.json` 中把 `defaultLanguage` 设置成 `en` 或 `zh`。
+在 `.codex-usage/config.json` 中可设置 `defaultLanguage` 为 `en` 或 `zh`。
 
 ## Transcript 标记
 
@@ -92,11 +79,7 @@ codex-usage report --lang zh
 可见文件上下文
 ```
 
-如果没有标记，整份文件默认作为助手可见文本处理。
-
 ## 存储
-
-默认数据目录：
 
 ```text
 .codex-usage/
@@ -108,17 +91,12 @@ codex-usage report --lang zh
 
 `.codex-usage/` 会被 git 忽略，因为它可能包含个人 transcript 和用量备注。
 
-## Codex 集成方向
+## Codex 集成
 
-推荐集成模型：
-
-```text
-CLI core + Codex Skill + Codex Plugin packaging
-```
-
-CLI 是稳定的开源核心。Codex Skill 可以告诉 Codex 什么时候、如何调用这个 CLI；Plugin 可以打包 skill、脚本和 manifest，方便安装。
+- CLI core
+- Codex Skill
+- Codex Plugin packaging
 
 ## License
 
 MIT
-
