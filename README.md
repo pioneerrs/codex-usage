@@ -30,6 +30,7 @@ Native Codex logs:
 
 ```bash
 .venv/bin/codex-usage codex report --today
+.venv/bin/codex-usage codex chart --today --output usage.html
 .venv/bin/codex-usage codex report --date 2026-05-10 --lang zh
 .venv/bin/codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 ```
@@ -73,6 +74,7 @@ Codex log reports use local Codex `token_count` records. Imported transcript rep
 codex-usage codex report --today
 codex-usage codex report --date 2026-05-10
 codex-usage codex report --since 7d
+codex-usage codex chart --today --output usage.html
 codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 
 codex-usage init
@@ -95,6 +97,15 @@ codex-usage export --format csv --output usage.csv
 ```
 
 The `codex` commands read `token_count` events from these files.
+
+## Charts
+
+```bash
+codex-usage codex chart --today --lang zh --output usage.html
+codex-usage codex chart --date 2026-05-10 --output usage.html
+```
+
+The chart command writes a static HTML file with inline SVG charts. It does not require Node.js, a browser server, or external CDN assets.
 
 ## Language
 

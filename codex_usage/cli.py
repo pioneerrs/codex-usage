@@ -6,6 +6,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from .charts import TEXT as CHART_TEXT
+from .charts import render_codex_chart_html
 from .codex_logs import (
     aggregate_codex_logs,
     default_codex_home,
@@ -149,6 +151,16 @@ def build_parser() -> argparse.ArgumentParser:
     codex_export.add_argument("--format", choices=("csv", "json"), default="csv")
     codex_export.add_argument("--output", required=True)
     codex_export.set_defaults(func=cmd_codex_export)
+
+    codex_chart = codex_subparsers.add_parser("chart", help="Write a static HTML/SVG usage chart.")
+    add_codex_log_filters(codex_chart)
+    codex_chart.add_argument(
+        "--output",
+        "-o",
+        default="codex-usage.html",
+        help="Output HTML file. Defaults to codex-usage.html.",
+    )
+    codex_chart.set_defaults(func=cmd_codex_chart)
 
     return parser
 
@@ -392,6 +404,20 @@ def cmd_codex_export(args: argparse.Namespace) -> None:
     output = Path(args.output)
     export_codex_report(report, output, args.format)
     print(f"Exported {len(report['sessions'])} Codex session row(s) to {output}")
+
+
+def cmd_codex_chart(args: argparse.Namespace) -> None:
+    data_dir = storage_dir_from(args.data_dir)
+    try:
+        config = load_config(data_dir)
+    except UsageError:
+        config = {}
+    lang = normalize_lang(args.lang or config.get("defaultLanguage", "auto"))
+    report = _codex_report_from_args(args)
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(render_codex_chart_html(report, lang=lang), encoding="utf-8")
+    print(f"{CHART_TEXT[lang]['written']} {output}")
 
 
 def _codex_report_from_args(args: argparse.Namespace) -> Dict[str, Any]:

@@ -10,4 +10,6 @@ dist/
 *.egg-info/
 .DS_Store
 usage.csv
-
+usage.html
+codex-usage.html
+codex-logs.csv

@@ -14,6 +14,7 @@
 ./scripts/check.sh
 .venv/bin/codex-usage codex report --today
 .venv/bin/codex-usage codex report --today --lang zh
+.venv/bin/codex-usage codex chart --today --lang zh --output usage.html
 .venv/bin/codex-usage --help
 ```
 

@@ -182,6 +182,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["reasoningOutputTokens"], 3)
         self.assertEqual(payload["summary"]["totalTokens"], 220)
         self.assertEqual(payload["summary"]["secondaryUsedPercentLatest"], 11)
+        self.assertEqual(sum(row["totalTokens"] for row in payload["timeline"]), 220)
 
         code, report, err = self.run_cli(
             "codex",
@@ -196,6 +197,26 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertIn("Codex 本地日志用量报告", report)
         self.assertIn("220", report)
+
+        code, out, err = self.run_cli(
+            "codex",
+            "chart",
+            "--date",
+            "2026-05-10",
+            "--codex-home",
+            str(codex_home),
+            "--output",
+            "chart.html",
+            "--lang",
+            "en",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("Wrote Codex usage chart to chart.html", out)
+        chart = Path("chart.html").read_text(encoding="utf-8")
+        self.assertIn("Codex Usage Chart", chart)
+        self.assertIn("<svg", chart)
+        self.assertIn("Cached Input", chart)
+        self.assertIn("220", chart)
 
     def test_auto_language_uses_locale(self):
         self.run_cli("init")

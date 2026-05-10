@@ -783,6 +783,7 @@ v0.1 完成时，用户应能：
 codex-usage codex report --today
 codex-usage codex report --date 2026-05-10
 codex-usage codex report --lang zh
+codex-usage codex chart --today --lang zh --output usage.html
 codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 ```
 
@@ -804,3 +805,5 @@ codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 - primary / secondary rate-limit used percent
 
 时间窗口统计按每个 session 的累计 `token_count` 做差值，不重复累加中间事件。
+
+图表报告生成静态 HTML 文件，使用内联 SVG，不依赖 Node.js、浏览器服务或外部 CDN。

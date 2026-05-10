@@ -30,6 +30,7 @@ Codex 本地日志：
 
 ```bash
 .venv/bin/codex-usage codex report --today
+.venv/bin/codex-usage codex chart --today --lang zh --output usage.html
 .venv/bin/codex-usage codex report --date 2026-05-10 --lang zh
 .venv/bin/codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 ```
@@ -73,6 +74,7 @@ Codex 日志报告读取本地 `token_count` 记录。导入对话记录报告�
 codex-usage codex report --today
 codex-usage codex report --date 2026-05-10 --lang zh
 codex-usage codex report --since 7d --lang zh
+codex-usage codex chart --today --lang zh --output usage.html
 codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 
 codex-usage init
@@ -94,6 +96,15 @@ codex-usage export --format csv --output usage.csv
 ```
 
 `codex` 命令会读取这些文件里的 `token_count` 事件。
+
+## 图表
+
+```bash
+codex-usage codex chart --today --lang zh --output usage.html
+codex-usage codex chart --date 2026-05-10 --lang zh --output usage.html
+```
+
+图表命令会生成一个静态 HTML 文件，图表使用内联 SVG，不需要 Node.js、浏览器服务或外部 CDN。
 
 ## 语言切换
 

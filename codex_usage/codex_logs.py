@@ -136,6 +136,7 @@ def aggregate_codex_logs(
     files = discover_session_files(codex_home=codex_home, include_archived=include_archived)
     session_rows: List[Dict[str, Any]] = []
     totals = _empty_totals()
+    timeline_buckets = _new_timeline_buckets(start, end)
     rate_events: List[Dict[str, Any]] = []
     token_event_count = 0
 
@@ -157,9 +158,14 @@ def aggregate_codex_logs(
         last_event = in_window[-1]
         base_usage = before["usage"] if before else _empty_totals()
         delta = _usage_delta(base_usage, last_event["usage"])
+        previous_usage = base_usage
         token_event_count += len(in_window)
         for key in TOKEN_KEYS:
             totals[key] += delta[key]
+        for event in in_window:
+            event_delta = _usage_delta(previous_usage, event["usage"])
+            _add_event_to_timeline(timeline_buckets, start, event, event_delta)
+            previous_usage = event["usage"]
 
         session_rate_events = [_rate_snapshot(event) for event in in_window]
         rate_events.extend(snapshot for snapshot in session_rate_events if snapshot)
@@ -184,7 +190,11 @@ def aggregate_codex_logs(
         **_public_usage(totals),
     }
     summary.update(_rate_summary_fields(rate_events))
-    return {"summary": summary, "sessions": session_rows}
+    return {
+        "summary": summary,
+        "sessions": session_rows,
+        "timeline": _public_timeline(timeline_buckets),
+    }
 
 
 def read_token_events(path: Path) -> List[Dict[str, Any]]:
@@ -389,6 +399,94 @@ def _rate_row(label: str, prefix: str, summary: Dict[str, Any], unavailable: str
 
 def _usage_delta(base: Dict[str, int], current: Dict[str, int]) -> Dict[str, int]:
     return {key: max(int(current.get(key) or 0) - int(base.get(key) or 0), 0) for key in TOKEN_KEYS}
+
+
+def _new_timeline_buckets(start: datetime, end: datetime) -> List[Dict[str, Any]]:
+    span = _timeline_bucket_span(start, end)
+    buckets: List[Dict[str, Any]] = []
+    cursor = start
+    while cursor <= end:
+        bucket_end = min(cursor + span, end)
+        buckets.append(
+            {
+                "bucketStart": cursor,
+                "bucketEnd": bucket_end,
+                "tokenEvents": 0,
+                "rateTimestamp": None,
+                "primaryUsedPercent": None,
+                "secondaryUsedPercent": None,
+                **_empty_totals(),
+            }
+        )
+        cursor = bucket_end
+        if cursor == end:
+            break
+    if not buckets:
+        buckets.append(
+            {
+                "bucketStart": start,
+                "bucketEnd": end,
+                "tokenEvents": 0,
+                "rateTimestamp": None,
+                "primaryUsedPercent": None,
+                "secondaryUsedPercent": None,
+                **_empty_totals(),
+            }
+        )
+    return buckets
+
+
+def _timeline_bucket_span(start: datetime, end: datetime) -> timedelta:
+    duration = end - start
+    if duration <= timedelta(days=2):
+        return timedelta(hours=1)
+    if duration <= timedelta(days=31):
+        return timedelta(days=1)
+    return timedelta(days=7)
+
+
+def _add_event_to_timeline(
+    buckets: List[Dict[str, Any]],
+    start: datetime,
+    event: Dict[str, Any],
+    delta: Dict[str, int],
+) -> None:
+    if not buckets:
+        return
+    first_span = buckets[0]["bucketEnd"] - buckets[0]["bucketStart"]
+    if first_span.total_seconds() <= 0:
+        index = 0
+    else:
+        seconds = max((event["timestamp"] - start).total_seconds(), 0)
+        index = int(seconds // first_span.total_seconds())
+    bucket = buckets[min(max(index, 0), len(buckets) - 1)]
+    bucket["tokenEvents"] += 1
+    for key in TOKEN_KEYS:
+        bucket[key] += delta[key]
+
+    snapshot = _rate_snapshot(event)
+    if not snapshot:
+        return
+    if bucket["rateTimestamp"] and snapshot["timestamp"] < bucket["rateTimestamp"]:
+        return
+    bucket["rateTimestamp"] = snapshot["timestamp"]
+    bucket["primaryUsedPercent"] = snapshot.get("primaryUsedPercent")
+    bucket["secondaryUsedPercent"] = snapshot.get("secondaryUsedPercent")
+
+
+def _public_timeline(buckets: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for bucket in buckets:
+        row = {
+            "bucketStart": bucket["bucketStart"].isoformat(),
+            "bucketEnd": bucket["bucketEnd"].isoformat(),
+            "tokenEvents": bucket["tokenEvents"],
+            **_public_usage(bucket),
+            "primaryUsedPercent": bucket.get("primaryUsedPercent"),
+            "secondaryUsedPercent": bucket.get("secondaryUsedPercent"),
+        }
+        rows.append(row)
+    return rows
 
 
 def _public_usage(usage: Dict[str, int]) -> Dict[str, int]:
