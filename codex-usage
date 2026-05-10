@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+from codex_usage.cli import entrypoint
+
+
+if __name__ == "__main__":
+    entrypoint()
+
