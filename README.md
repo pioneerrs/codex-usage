@@ -12,16 +12,43 @@ WeChat group:
 
 Valid until 2026-05-18.
 
+## Requirements
+
+- Python 3.9+
+- Codex local session logs
+
 ## Run
+
+macOS, Linux, or WSL:
 
 ```bash
 ./run.sh
 ```
 
+Windows PowerShell:
+
+```powershell
+.\run.ps1
+```
+
+If PowerShell blocks local scripts:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run.ps1
+```
+
+Manual setup:
+
 ```bash
 ./scripts/bootstrap.sh
 ./scripts/demo.sh
 ./scripts/check.sh
+```
+
+```powershell
+.\scripts\bootstrap.ps1
+.\scripts\demo.ps1
+.\scripts\check.ps1
 ```
 
 ## Quick Start
@@ -35,6 +62,15 @@ Native Codex logs:
 .venv/bin/codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 ```
 
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\codex-usage.exe codex report --today
+.\.venv\Scripts\codex-usage.exe codex chart --today --output usage.html
+.\.venv\Scripts\codex-usage.exe codex report --date 2026-05-10 --lang zh
+.\.venv\Scripts\codex-usage.exe codex export --date 2026-05-10 --format csv --output codex-logs.csv
+```
+
 Imported transcript estimate:
 
 ```bash
@@ -46,6 +82,19 @@ python3 -m venv .venv
 .venv/bin/codex-usage turn add --group quick-chat --file examples/marked-transcript.md --task-type simple_chat --requests 1
 .venv/bin/codex-usage snapshot --group quick-chat --usage 10.2
 .venv/bin/codex-usage report --group quick-chat
+```
+
+Windows PowerShell:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\codex-usage.exe init
+.\.venv\Scripts\codex-usage.exe group create "quick-chat"
+.\.venv\Scripts\codex-usage.exe snapshot --group quick-chat --usage 10
+.\.venv\Scripts\codex-usage.exe turn add --group quick-chat --file examples\marked-transcript.md --task-type simple_chat --requests 1
+.\.venv\Scripts\codex-usage.exe snapshot --group quick-chat --usage 10.2
+.\.venv\Scripts\codex-usage.exe report --group quick-chat
 ```
 
 ## Records
@@ -91,12 +140,31 @@ codex-usage export --format csv --output usage.csv
 
 ## Native Codex Logs
 
+macOS, Linux, or WSL:
+
 ```text
 ~/.codex/sessions/**/*.jsonl
 ~/.codex/archived_sessions/*.jsonl
 ```
 
+Windows:
+
+```text
+%USERPROFILE%\.codex\sessions\**\*.jsonl
+%USERPROFILE%\.codex\archived_sessions\*.jsonl
+```
+
 The `codex` commands read `token_count` events from these files.
+
+If your Codex home is elsewhere:
+
+```bash
+codex-usage codex report --today --codex-home /path/to/.codex
+```
+
+```powershell
+.\.venv\Scripts\codex-usage.exe codex report --today --codex-home "C:\Users\you\.codex"
+```
 
 ## Charts
 
@@ -106,6 +174,33 @@ codex-usage codex chart --date 2026-05-10 --output usage.html
 ```
 
 The chart command writes a static HTML file with inline SVG charts. It does not require Node.js, a browser server, or external CDN assets.
+
+## Troubleshooting
+
+PowerShell script blocked:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run.ps1
+```
+
+Python not found on Windows:
+
+```powershell
+$env:PYTHON = "C:\Path\To\python.exe"
+.\run.ps1
+```
+
+No Codex records found:
+
+```bash
+codex-usage doctor
+codex-usage codex report --today --codex-home /path/to/.codex
+```
+
+```powershell
+.\.venv\Scripts\codex-usage.exe doctor
+.\.venv\Scripts\codex-usage.exe codex report --today --codex-home "C:\Users\you\.codex"
+```
 
 ## Language
 

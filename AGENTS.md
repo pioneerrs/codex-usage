@@ -2,11 +2,21 @@
 
 ## First Command
 
+macOS, Linux, or WSL:
+
 ```bash
 ./run.sh
 ```
 
+Windows PowerShell:
+
+```powershell
+.\run.ps1
+```
+
 ## Useful Commands
+
+macOS, Linux, or WSL:
 
 ```bash
 ./scripts/bootstrap.sh
@@ -16,6 +26,18 @@
 .venv/bin/codex-usage codex report --today --lang zh
 .venv/bin/codex-usage codex chart --today --lang zh --output usage.html
 .venv/bin/codex-usage --help
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\bootstrap.ps1
+.\scripts\demo.ps1
+.\scripts\check.ps1
+.\.venv\Scripts\codex-usage.exe codex report --today
+.\.venv\Scripts\codex-usage.exe codex report --today --lang zh
+.\.venv\Scripts\codex-usage.exe codex chart --today --lang zh --output usage.html
+.\.venv\Scripts\codex-usage.exe --help
 ```
 
 ## Language
@@ -35,6 +57,10 @@ Create a fresh local usage database:
 
 ```bash
 .venv/bin/codex-usage init
+```
+
+```powershell
+.\.venv\Scripts\codex-usage.exe init
 ```
 
 ## What This Tool Can and Cannot Do

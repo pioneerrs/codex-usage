@@ -12,16 +12,43 @@ Codex token 用量统计命令行工具。
 
 有效期至 2026-05-18。
 
+## 环境要求
+
+- Python 3.9+
+- 本机已有 Codex session 日志
+
 ## 运行
+
+macOS、Linux 或 WSL：
 
 ```bash
 ./run.sh
 ```
 
+Windows PowerShell：
+
+```powershell
+.\run.ps1
+```
+
+如果 PowerShell 阻止本地脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run.ps1
+```
+
+手动执行：
+
 ```bash
 ./scripts/bootstrap.sh
 ./scripts/demo.sh
 ./scripts/check.sh
+```
+
+```powershell
+.\scripts\bootstrap.ps1
+.\scripts\demo.ps1
+.\scripts\check.ps1
 ```
 
 ## 快速开始
@@ -35,6 +62,15 @@ Codex 本地日志：
 .venv/bin/codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 ```
 
+Windows PowerShell：
+
+```powershell
+.\.venv\Scripts\codex-usage.exe codex report --today --lang zh
+.\.venv\Scripts\codex-usage.exe codex chart --today --lang zh --output usage.html
+.\.venv\Scripts\codex-usage.exe codex report --date 2026-05-10 --lang zh
+.\.venv\Scripts\codex-usage.exe codex export --date 2026-05-10 --format csv --output codex-logs.csv
+```
+
 导入对话记录估算：
 
 ```bash
@@ -46,6 +82,19 @@ python3 -m venv .venv
 .venv/bin/codex-usage turn add --group quick-chat --file examples/marked-transcript.md --task-type simple_chat --requests 1
 .venv/bin/codex-usage snapshot --group quick-chat --usage 10.2
 .venv/bin/codex-usage report --group quick-chat --lang zh
+```
+
+Windows PowerShell：
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\codex-usage.exe init
+.\.venv\Scripts\codex-usage.exe group create "quick-chat"
+.\.venv\Scripts\codex-usage.exe snapshot --group quick-chat --usage 10
+.\.venv\Scripts\codex-usage.exe turn add --group quick-chat --file examples\marked-transcript.md --task-type simple_chat --requests 1
+.\.venv\Scripts\codex-usage.exe snapshot --group quick-chat --usage 10.2
+.\.venv\Scripts\codex-usage.exe report --group quick-chat --lang zh
 ```
 
 ## 记录内容
@@ -90,12 +139,31 @@ codex-usage export --format csv --output usage.csv
 
 ## Codex 本地日志
 
+macOS、Linux 或 WSL：
+
 ```text
 ~/.codex/sessions/**/*.jsonl
 ~/.codex/archived_sessions/*.jsonl
 ```
 
+Windows：
+
+```text
+%USERPROFILE%\.codex\sessions\**\*.jsonl
+%USERPROFILE%\.codex\archived_sessions\*.jsonl
+```
+
 `codex` 命令会读取这些文件里的 `token_count` 事件。
+
+如果 Codex home 不在默认位置：
+
+```bash
+codex-usage codex report --today --codex-home /path/to/.codex
+```
+
+```powershell
+.\.venv\Scripts\codex-usage.exe codex report --today --lang zh --codex-home "C:\Users\you\.codex"
+```
 
 ## 图表
 
@@ -105,6 +173,33 @@ codex-usage codex chart --date 2026-05-10 --lang zh --output usage.html
 ```
 
 图表命令会生成一个静态 HTML 文件，图表使用内联 SVG，不需要 Node.js、浏览器服务或外部 CDN。
+
+## 常见问题
+
+PowerShell 阻止脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\run.ps1
+```
+
+Windows 找不到 Python：
+
+```powershell
+$env:PYTHON = "C:\Path\To\python.exe"
+.\run.ps1
+```
+
+没有找到 Codex 记录：
+
+```bash
+codex-usage doctor
+codex-usage codex report --today --codex-home /path/to/.codex
+```
+
+```powershell
+.\.venv\Scripts\codex-usage.exe doctor
+.\.venv\Scripts\codex-usage.exe codex report --today --lang zh --codex-home "C:\Users\you\.codex"
+```
 
 ## 语言切换
 
