@@ -108,3 +108,6 @@ CLI core + Codex Skill + Codex Plugin packaging
 
 The CLI is the durable open-source engine. A Codex Skill can teach Codex when and how to call the CLI, and a Plugin can package the skill, scripts, and manifest for installation.
 
+## License
+
+MIT
