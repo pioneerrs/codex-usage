@@ -4,6 +4,14 @@ Codex token 用量统计命令行工具。
 
 [English](README.md)
 
+## 交流群
+
+微信群：
+
+<img src="docs/assets/wechat-group-qrcode.jpg" alt="微信群二维码" width="260" />
+
+有效期至 2026-05-18。
+
 ## 运行
 
 ```bash

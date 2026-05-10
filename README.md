@@ -4,6 +4,14 @@ Local CLI for Codex token usage reports.
 
 [中文文档](README.zh-CN.md)
 
+## Community
+
+WeChat group:
+
+<img src="docs/assets/wechat-group-qrcode.jpg" alt="WeChat group QR code" width="260" />
+
+Valid until 2026-05-18.
+
 ## Run
 
 ```bash
