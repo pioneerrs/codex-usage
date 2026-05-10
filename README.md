@@ -1,6 +1,6 @@
 # Codex Usage Estimator
 
-Local CLI for estimating Codex subscription usage from visible transcripts.
+Local CLI for Codex token usage reports.
 
 [中文文档](README.zh-CN.md)
 
@@ -18,6 +18,16 @@ Local CLI for estimating Codex subscription usage from visible transcripts.
 
 ## Quick Start
 
+Native Codex logs:
+
+```bash
+.venv/bin/codex-usage codex report --today
+.venv/bin/codex-usage codex report --date 2026-05-10 --lang zh
+.venv/bin/codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
+```
+
+Imported transcript estimate:
+
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
@@ -31,19 +41,32 @@ python3 -m venv .venv
 
 ## Records
 
+- Codex local `token_count` logs
+- input tokens
+- cached input tokens
+- non-cached input tokens
+- output tokens
+- reasoning output tokens
+- total tokens
+- primary and secondary rate-limit percentages
 - task groups
 - manual subscription usage snapshots
-- visible transcript turns
+- imported transcript turns
 - estimated user, assistant, tool, and file-context tokens
 - estimated requests and tool call counts
 - aggregate reports by task group, model, mode, and time window
 - CSV or JSON exports
 
-All token values are estimated from locally visible text. They are not OpenAI billing tokens or Codex internal token counts.
+Codex log reports use local Codex `token_count` records. Imported transcript reports are estimated from visible text.
 
 ## Commands
 
 ```bash
+codex-usage codex report --today
+codex-usage codex report --date 2026-05-10
+codex-usage codex report --since 7d
+codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
+
 codex-usage init
 codex-usage doctor
 codex-usage group create "repo-refactor" --label code
@@ -56,15 +79,27 @@ codex-usage report --since 7d
 codex-usage export --format csv --output usage.csv
 ```
 
+## Native Codex Logs
+
+```text
+~/.codex/sessions/**/*.jsonl
+~/.codex/archived_sessions/*.jsonl
+```
+
+The `codex` commands read `token_count` events from these files.
+
 ## Language
 
 ```bash
+codex-usage codex report --lang zh
 codex-usage report --lang zh
 ```
 
 Set `defaultLanguage` in `.codex-usage/config.json` to `en` or `zh`.
 
 ## Transcript Markers
+
+Transcript means an imported conversation or run log.
 
 ```markdown
 <!-- codex-usage:user -->

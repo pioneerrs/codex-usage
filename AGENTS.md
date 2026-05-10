@@ -12,6 +12,7 @@
 ./scripts/bootstrap.sh
 ./scripts/demo.sh
 ./scripts/check.sh
+.venv/bin/codex-usage codex report --today
 .venv/bin/codex-usage --help
 ```
 
@@ -27,6 +28,8 @@ Create a fresh local usage database:
 
 ## What This Tool Can and Cannot Do
 
-Estimates token usage from locally visible text.
+Reads Codex local `token_count` logs.
 
-Does not read Codex internal token counts, hidden prompts, reasoning tokens, or subscription billing internals.
+Estimates imported transcript usage from locally visible text.
+
+Does not read hidden prompts or subscription billing internals.

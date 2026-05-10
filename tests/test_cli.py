@@ -122,6 +122,121 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("inconsistent", err)
 
+    def test_codex_log_export_uses_window_delta(self):
+        codex_home = Path("codex-home")
+        session_dir = codex_home / "sessions" / "2026" / "05" / "10"
+        session_dir.mkdir(parents=True)
+        session_file = session_dir / "rollout-test.jsonl"
+        session_file.write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        token_count_event(
+                            "2026-05-09T23:59:00+08:00",
+                            input_tokens=100,
+                            cached_input_tokens=40,
+                            output_tokens=10,
+                            reasoning_output_tokens=2,
+                            total_tokens=110,
+                            primary=1,
+                            secondary=10,
+                        )
+                    ),
+                    json.dumps(
+                        token_count_event(
+                            "2026-05-10T10:00:00+08:00",
+                            input_tokens=300,
+                            cached_input_tokens=140,
+                            output_tokens=30,
+                            reasoning_output_tokens=5,
+                            total_tokens=330,
+                            primary=2,
+                            secondary=11,
+                        )
+                    ),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        code, out, err = self.run_cli(
+            "codex",
+            "export",
+            "--date",
+            "2026-05-10",
+            "--codex-home",
+            str(codex_home),
+            "--format",
+            "json",
+            "--output",
+            "codex.json",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("Exported 1 Codex session row", out)
+        payload = json.loads(Path("codex.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["summary"]["inputTokens"], 200)
+        self.assertEqual(payload["summary"]["cachedInputTokens"], 100)
+        self.assertEqual(payload["summary"]["nonCachedInputTokens"], 100)
+        self.assertEqual(payload["summary"]["outputTokens"], 20)
+        self.assertEqual(payload["summary"]["reasoningOutputTokens"], 3)
+        self.assertEqual(payload["summary"]["totalTokens"], 220)
+        self.assertEqual(payload["summary"]["secondaryUsedPercentLatest"], 11)
+
+        code, report, err = self.run_cli(
+            "codex",
+            "report",
+            "--date",
+            "2026-05-10",
+            "--codex-home",
+            str(codex_home),
+            "--lang",
+            "zh",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("Codex 本地日志用量报告", report)
+        self.assertIn("220", report)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def token_count_event(
+    timestamp,
+    input_tokens,
+    cached_input_tokens,
+    output_tokens,
+    reasoning_output_tokens,
+    total_tokens,
+    primary,
+    secondary,
+):
+    return {
+        "timestamp": timestamp,
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "info": {
+                "total_token_usage": {
+                    "input_tokens": input_tokens,
+                    "cached_input_tokens": cached_input_tokens,
+                    "output_tokens": output_tokens,
+                    "reasoning_output_tokens": reasoning_output_tokens,
+                    "total_tokens": total_tokens,
+                }
+            },
+            "rate_limits": {
+                "primary": {
+                    "used_percent": primary,
+                    "window_minutes": 300,
+                    "resets_at": 1778428491,
+                },
+                "secondary": {
+                    "used_percent": secondary,
+                    "window_minutes": 10080,
+                    "resets_at": 1778654082,
+                },
+            },
+        },
+    }

@@ -774,3 +774,32 @@ v0.1 完成时，用户应能：
 - 生成任务组报告。
 - 看到每 1% 订阅额度对应的估算可见 token。
 - 明确知道这些 token 不是 OpenAI 真实账单 token。
+
+## 20. Codex 本地日志统计
+
+新增 `codex` 命令直接读取本机 Codex session 日志：
+
+```bash
+codex-usage codex report --today
+codex-usage codex report --date 2026-05-10
+codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
+```
+
+默认读取：
+
+```text
+~/.codex/sessions/**/*.jsonl
+~/.codex/archived_sessions/*.jsonl
+```
+
+统计字段：
+
+- input tokens
+- cached input tokens
+- non-cached input tokens
+- output tokens
+- reasoning output tokens
+- total tokens
+- primary / secondary rate-limit used percent
+
+时间窗口统计按每个 session 的累计 `token_count` 做差值，不重复累加中间事件。

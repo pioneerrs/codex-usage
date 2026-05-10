@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "codex-usage-estimator"
 version = "0.1.0"
-description = "Local CLI for estimating Codex subscription usage from visible transcripts."
+description = "Local CLI for Codex token usage reports."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [

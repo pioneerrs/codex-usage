@@ -6,6 +6,14 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+from .codex_logs import (
+    aggregate_codex_logs,
+    default_codex_home,
+    discover_session_files,
+    export_codex_report,
+    render_codex_report,
+    resolve_time_window as resolve_codex_time_window,
+)
 from .errors import UsageError
 from .reporting import (
     TEXT,
@@ -130,6 +138,18 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--output", required=True)
     export.set_defaults(func=cmd_export)
 
+    codex = subparsers.add_parser("codex", help="Report native Codex local session logs.")
+    codex_subparsers = codex.add_subparsers(dest="codex_command", required=True)
+    codex_report = codex_subparsers.add_parser("report", help="Print usage from Codex token_count logs.")
+    add_codex_log_filters(codex_report)
+    codex_report.set_defaults(func=cmd_codex_report)
+
+    codex_export = codex_subparsers.add_parser("export", help="Export usage from Codex token_count logs.")
+    add_codex_log_filters(codex_export, include_lang=False)
+    codex_export.add_argument("--format", choices=("csv", "json"), default="csv")
+    codex_export.add_argument("--output", required=True)
+    codex_export.set_defaults(func=cmd_codex_export)
+
     return parser
 
 
@@ -140,6 +160,27 @@ def add_report_filters(parser: argparse.ArgumentParser, include_lang: bool = Tru
     parser.add_argument("--to", dest="to_value", help="End date, YYYY-MM-DD or ISO timestamp.")
     parser.add_argument("--model", help="Only include turns for this model.")
     parser.add_argument("--mode", choices=MODES, help="Only include turns for this execution mode.")
+    if include_lang:
+        parser.add_argument(
+            "--lang",
+            choices=("en", "zh"),
+            help="Output language. Defaults to config defaultLanguage.",
+        )
+
+
+def add_codex_log_filters(parser: argparse.ArgumentParser, include_lang: bool = True) -> None:
+    date_group = parser.add_mutually_exclusive_group()
+    date_group.add_argument("--today", action="store_true", help="Use today's local time window. Default.")
+    date_group.add_argument("--date", help="Use one local calendar day, YYYY-MM-DD.")
+    date_group.add_argument("--since", help='Relative time filter, such as "7d", "12h", or "30m".')
+    parser.add_argument("--from", dest="from_value", help="Start date, YYYY-MM-DD or ISO timestamp.")
+    parser.add_argument("--to", dest="to_value", help="End date, YYYY-MM-DD or ISO timestamp.")
+    parser.add_argument("--codex-home", default=str(default_codex_home()), help="Codex home directory.")
+    parser.add_argument(
+        "--no-archived",
+        action="store_true",
+        help="Do not scan ~/.codex/archived_sessions.",
+    )
     if include_lang:
         parser.add_argument(
             "--lang",
@@ -179,6 +220,13 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     else:
         print(f"storage: not initialized at {data_dir}")
         print("Run `codex-usage init` when you are ready to record real usage.")
+
+    codex_home = default_codex_home()
+    print(f"codex home: {codex_home}")
+    if codex_home.exists():
+        print(f"codex session logs: {len(discover_session_files(codex_home))}")
+    else:
+        print("codex session logs: unavailable")
 
 
 def cmd_group_create(args: argparse.Namespace) -> None:
@@ -326,6 +374,40 @@ def cmd_export(args: argparse.Namespace) -> None:
     output = Path(args.output)
     export_rows(rows, output, args.format)
     print(f"Exported {len(rows)} row(s) to {output}")
+
+
+def cmd_codex_report(args: argparse.Namespace) -> None:
+    data_dir = storage_dir_from(args.data_dir)
+    try:
+        config = load_config(data_dir)
+    except UsageError:
+        config = {}
+    lang = normalize_lang(args.lang or config.get("defaultLanguage", "en"))
+    report = _codex_report_from_args(args)
+    print(render_codex_report(report, lang=lang))
+
+
+def cmd_codex_export(args: argparse.Namespace) -> None:
+    report = _codex_report_from_args(args)
+    output = Path(args.output)
+    export_codex_report(report, output, args.format)
+    print(f"Exported {len(report['sessions'])} Codex session row(s) to {output}")
+
+
+def _codex_report_from_args(args: argparse.Namespace) -> Dict[str, Any]:
+    start, end = resolve_codex_time_window(
+        today=args.today,
+        date_value=args.date,
+        since=args.since,
+        from_value=args.from_value,
+        to_value=args.to_value,
+    )
+    return aggregate_codex_logs(
+        start=start,
+        end=end,
+        codex_home=Path(args.codex_home),
+        include_archived=not args.no_archived,
+    )
 
 
 def _aggregate_from_args(
