@@ -8,10 +8,12 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from .errors import UsageError
 from .reporting import (
+    TEXT,
     aggregate_breakdown,
     aggregate_rows,
     export_rows,
     filter_turns,
+    normalize_lang,
     render_breakdown,
     render_report,
 )
@@ -123,7 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     report.set_defaults(func=cmd_report)
 
     export = subparsers.add_parser("export", help="Export aggregated usage data.")
-    add_report_filters(export)
+    add_report_filters(export, include_lang=False)
     export.add_argument("--format", choices=("csv", "json"), default="csv")
     export.add_argument("--output", required=True)
     export.set_defaults(func=cmd_export)
@@ -131,13 +133,19 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def add_report_filters(parser: argparse.ArgumentParser) -> None:
+def add_report_filters(parser: argparse.ArgumentParser, include_lang: bool = True) -> None:
     parser.add_argument("--group", help="Task group name or id.")
     parser.add_argument("--since", help='Relative time filter, such as "7d", "12h", or "30m".')
     parser.add_argument("--from", dest="from_value", help="Start date, YYYY-MM-DD or ISO timestamp.")
     parser.add_argument("--to", dest="to_value", help="End date, YYYY-MM-DD or ISO timestamp.")
     parser.add_argument("--model", help="Only include turns for this model.")
     parser.add_argument("--mode", choices=MODES, help="Only include turns for this execution mode.")
+    if include_lang:
+        parser.add_argument(
+            "--lang",
+            choices=("en", "zh"),
+            help="Output language. Defaults to config defaultLanguage.",
+        )
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -284,18 +292,32 @@ def cmd_turn_add(args: argparse.Namespace) -> None:
 
 def cmd_report(args: argparse.Namespace) -> None:
     data_dir = storage_dir_from(args.data_dir)
+    config = load_config(data_dir)
+    lang = normalize_lang(args.lang or config.get("defaultLanguage", "en"))
     groups = load_groups(data_dir)
     snapshots = load_snapshots(data_dir)
     turns = load_turns(data_dir)
     rows = _aggregate_from_args(groups, snapshots, turns, args)
     breakdown_turns = _filter_turns_from_args(groups, turns, args)
-    print(render_report(rows))
+    print(render_report(rows, lang=lang))
     if args.breakdown in ("model", "all"):
         print("")
-        print(render_breakdown("Estimated Breakdown by Model", aggregate_breakdown(breakdown_turns, "model")))
+        print(
+            render_breakdown(
+                TEXT[lang]["breakdown_model"],
+                aggregate_breakdown(breakdown_turns, "model"),
+                lang=lang,
+            )
+        )
     if args.breakdown in ("mode", "all"):
         print("")
-        print(render_breakdown("Estimated Breakdown by Mode", aggregate_breakdown(breakdown_turns, "mode")))
+        print(
+            render_breakdown(
+                TEXT[lang]["breakdown_mode"],
+                aggregate_breakdown(breakdown_turns, "mode"),
+                lang=lang,
+            )
+        )
 
 
 def cmd_export(args: argparse.Namespace) -> None:

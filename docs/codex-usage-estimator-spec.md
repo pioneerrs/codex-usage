@@ -199,6 +199,7 @@ type TurnRecord = {
 {
   "version": 1,
   "defaultEncoding": "o200k_base",
+  "defaultLanguage": "en",
   "defaultModel": "unknown",
   "defaultMode": "unknown",
   "multipliers": {
@@ -773,4 +774,3 @@ v0.1 完成时，用户应能：
 - 生成任务组报告。
 - 看到每 1% 订阅额度对应的估算可见 token。
 - 明确知道这些 token 不是 OpenAI 真实账单 token。
-

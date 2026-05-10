@@ -79,7 +79,13 @@ class CliTests(unittest.TestCase):
         self.assertIn("quick-chat", out)
         self.assertIn("0.2%", out)
         self.assertIn("All token values are estimated", out)
-        self.assertIn("所有 token 数值均基于本地可见文本估算", out)
+        self.assertNotIn("所有 token 数值均基于本地可见文本估算", out)
+
+        code, zh_out, err = self.run_cli("report", "--group", "quick-chat", "--lang", "zh")
+        self.assertEqual(code, 0, err)
+        self.assertIn("已记录的 Codex 用量估算报告", zh_out)
+        self.assertIn("所有 token 数值均基于本地可见文本估算", zh_out)
+        self.assertNotIn("All token values are estimated", zh_out)
 
         turns = [
             json.loads(line)
@@ -119,4 +125,3 @@ class CliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -2,6 +2,8 @@
 
 Local CLI for estimating Codex subscription usage from visible transcripts.
 
+[中文文档](README.zh-CN.md)
+
 This project is intentionally built so a user can ask an AI coding agent to clone it and run one command.
 
 ## AI Agent Entry Point
@@ -50,8 +52,6 @@ python3 -m venv .venv
 
 All token values are estimated from locally visible text. They are not OpenAI billing tokens or Codex internal token counts.
 
-所有 token 数值均基于本地可见文本估算，不代表 OpenAI 账单 token 或 Codex 内部真实 token。
-
 ## Main Commands
 
 ```bash
@@ -62,9 +62,20 @@ codex-usage group list
 codex-usage snapshot --group repo-refactor --usage 42
 codex-usage turn add --group repo-refactor --file transcript.md --task-type medium_code_task --requests 4 --tool-calls 12
 codex-usage report --group repo-refactor
+codex-usage report --group repo-refactor --lang zh
 codex-usage report --since 7d
 codex-usage export --format csv --output usage.csv
 ```
+
+## Language
+
+Reports default to English. Use `--lang zh` for Chinese output:
+
+```bash
+codex-usage report --lang zh
+```
+
+You can also set `defaultLanguage` in `.codex-usage/config.json` to `en` or `zh`.
 
 ## Transcript Markers
 

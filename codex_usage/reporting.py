@@ -16,6 +16,88 @@ DISCLAIMER_EN = (
 )
 DISCLAIMER_ZH = "所有 token 数值均基于本地可见文本估算，不代表 OpenAI 账单 token 或 Codex 内部真实 token。"
 
+TEXT = {
+    "en": {
+        "report_title": "Recorded Estimated Codex Usage Report",
+        "no_matching_records": "No matching records.",
+        "recorded_only": "This report only covers turns explicitly recorded or imported into `.codex-usage/`.",
+        "recorded_only_store": "This report only covers turns explicitly recorded or imported into the local data store.",
+        "not_included": "Unrecorded long-running goals, hidden context, reasoning tokens, and Codex internals are not included.",
+        "effective_note": "Effective tokens are heuristic and calibrated by task type multiplier.",
+        "notes": "Notes:",
+        "disclaimer": DISCLAIMER_EN,
+        "unavailable": "unavailable",
+        "negative": "negative",
+        "breakdown_model": "Estimated Breakdown by Model",
+        "breakdown_mode": "Estimated Breakdown by Mode",
+        "headers": [
+            "Task Group",
+            "Turns",
+            "Requests Est.",
+            "Tool Calls",
+            "Visible Tokens Est.",
+            "Effective Tokens Est.",
+            "Usage Δ",
+            "Visible / 1% Est.",
+            "Visible / Request Est.",
+            "Visible / Tool Est.",
+        ],
+        "breakdown_headers": [
+            "Key",
+            "Turns",
+            "Requests Est.",
+            "Tool Calls",
+            "Visible Tokens Est.",
+            "Effective Tokens Est.",
+        ],
+    },
+    "zh": {
+        "report_title": "已记录的 Codex 用量估算报告",
+        "no_matching_records": "没有匹配的记录。",
+        "recorded_only": "本报告只统计已显式记录或导入 `.codex-usage/` 的 turn。",
+        "recorded_only_store": "本报告只统计已显式记录或导入本地数据目录的 turn。",
+        "not_included": "未记录的长时间 goal、隐藏上下文、reasoning token 和 Codex 内部数据不会计入。",
+        "effective_note": "有效 token 是按任务类型 multiplier 计算的启发式估算值。",
+        "notes": "说明：",
+        "disclaimer": DISCLAIMER_ZH,
+        "unavailable": "不可用",
+        "negative": "负数",
+        "breakdown_model": "按模型估算汇总",
+        "breakdown_mode": "按执行模式估算汇总",
+        "headers": [
+            "任务组",
+            "轮次",
+            "估算请求",
+            "工具调用",
+            "可见Token估算",
+            "有效Token估算",
+            "用量变化",
+            "每1%可见估算",
+            "每请求可见估算",
+            "每工具可见估算",
+        ],
+        "breakdown_headers": [
+            "类别",
+            "轮次",
+            "估算请求",
+            "工具调用",
+            "可见Token估算",
+            "有效Token估算",
+        ],
+    },
+}
+
+
+def normalize_lang(lang: Optional[str]) -> str:
+    if not lang:
+        return "en"
+    normalized = lang.lower()
+    if normalized in ("zh-cn", "zh_hans", "zh-hans", "cn"):
+        return "zh"
+    if normalized not in TEXT:
+        raise UsageError('Unsupported language. Use "en" or "zh".')
+    return normalized
+
 
 def parse_datetime_filter(value: Optional[str], end_of_day: bool = False) -> Optional[datetime]:
     if not value:
@@ -217,16 +299,16 @@ def _divide(numerator: float, denominator: Optional[float]) -> Optional[float]:
     return numerator / denominator
 
 
-def render_report(rows: Sequence[Dict[str, Any]]) -> str:
-    lines = ["Recorded Estimated Codex Usage Report", ""]
+def render_report(rows: Sequence[Dict[str, Any]], lang: str = "en") -> str:
+    text = TEXT[normalize_lang(lang)]
+    lines = [text["report_title"], ""]
     if not rows:
-        lines.append("No matching records.")
+        lines.append(text["no_matching_records"])
         lines.extend(
             [
                 "",
-                DISCLAIMER_EN,
-                DISCLAIMER_ZH,
-                "This report only covers turns explicitly recorded or imported into the local data store.",
+                text["disclaimer"],
+                text["recorded_only_store"],
             ]
         )
         return "\n".join(lines)
@@ -239,45 +321,34 @@ def render_report(rows: Sequence[Dict[str, Any]]) -> str:
             str(row["toolCalls"]),
             _format_int(row["visibleTokensEstimated"]),
             _format_int(row["effectiveTokensEstimated"]),
-            _format_percent(row["usageDeltaPercent"]),
-            _format_optional_number(row["visibleTokensPerUsagePercentEstimated"]),
-            _format_optional_number(row["visibleTokensPerRequestEstimated"]),
-            _format_optional_number(row["visibleTokensPerToolCallEstimated"]),
+            _format_percent(row["usageDeltaPercent"], lang),
+            _format_optional_number(row["visibleTokensPerUsagePercentEstimated"], lang),
+            _format_optional_number(row["visibleTokensPerRequestEstimated"], lang),
+            _format_optional_number(row["visibleTokensPerToolCallEstimated"], lang),
         ]
         for row in rows
     ]
     lines.extend(
         render_table(
-            [
-                "Task Group",
-                "Turns",
-                "Requests Est.",
-                "Tool Calls",
-                "Visible Tokens Est.",
-                "Effective Tokens Est.",
-                "Usage Δ",
-                "Visible / 1% Est.",
-                "Visible / Request Est.",
-                "Visible / Tool Est.",
-            ],
+            text["headers"],
             table_rows,
         )
     )
     lines.extend(
         [
             "",
-            "Notes:",
-            "- This report only covers turns explicitly recorded or imported into `.codex-usage/`.",
-            "- Unrecorded long-running goals, hidden context, reasoning tokens, and Codex internals are not included.",
-            f"- {DISCLAIMER_EN}",
-            f"- {DISCLAIMER_ZH}",
-            "- Effective tokens are heuristic and calibrated by task type multiplier.",
+            text["notes"],
+            f"- {text['recorded_only']}",
+            f"- {text['not_included']}",
+            f"- {text['disclaimer']}",
+            f"- {text['effective_note']}",
         ]
     )
     return "\n".join(lines)
 
 
-def render_breakdown(title: str, rows: Sequence[Dict[str, Any]]) -> str:
+def render_breakdown(title: str, rows: Sequence[Dict[str, Any]], lang: str = "en") -> str:
+    text = TEXT[normalize_lang(lang)]
     lines = [title, ""]
     table_rows = [
         [
@@ -292,14 +363,7 @@ def render_breakdown(title: str, rows: Sequence[Dict[str, Any]]) -> str:
     ]
     lines.extend(
         render_table(
-            [
-                "Key",
-                "Turns",
-                "Requests Est.",
-                "Tool Calls",
-                "Visible Tokens Est.",
-                "Effective Tokens Est.",
-            ],
+            text["breakdown_headers"],
             table_rows,
         )
     )
@@ -374,15 +438,17 @@ def _format_int(value: Any) -> str:
     return f"{int(value):,}"
 
 
-def _format_percent(value: Optional[float]) -> str:
+def _format_percent(value: Optional[float], lang: str = "en") -> str:
+    text = TEXT[normalize_lang(lang)]
     if value is None:
-        return "unavailable"
+        return text["unavailable"]
     if value < 0:
-        return f"negative {value:g}%"
+        return f"{text['negative']} {value:g}%"
     return f"{value:g}%"
 
 
-def _format_optional_number(value: Optional[float]) -> str:
+def _format_optional_number(value: Optional[float], lang: str = "en") -> str:
+    text = TEXT[normalize_lang(lang)]
     if value is None:
-        return "unavailable"
+        return text["unavailable"]
     return f"{round(value):,}"

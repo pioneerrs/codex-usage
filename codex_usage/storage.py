@@ -14,6 +14,7 @@ DEFAULT_DIR = ".codex-usage"
 DEFAULT_CONFIG = {
     "version": 1,
     "defaultEncoding": "o200k_base",
+    "defaultLanguage": "en",
     "defaultModel": "unknown",
     "defaultMode": "unknown",
     "multipliers": {
@@ -152,4 +153,3 @@ def find_group(groups: Iterable[Dict[str, Any]], value: str) -> Dict[str, Any]:
         f'Task group "{value}" was not found. '
         "Run `codex-usage group list` to see available groups."
     )
-

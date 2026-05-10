@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "codex-usage-estimator"
 version = "0.1.0"
 description = "Local CLI for estimating Codex subscription usage from visible transcripts."
-readme = "docs/codex-usage-estimator-spec.md"
+readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
   "tiktoken>=0.7.0",
@@ -14,4 +14,3 @@ dependencies = [
 
 [project.scripts]
 codex-usage = "codex_usage.cli:entrypoint"
-
