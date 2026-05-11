@@ -58,6 +58,8 @@ Native Codex logs:
 ```bash
 .venv/bin/codex-usage codex report --today
 .venv/bin/codex-usage codex chart --today --output usage.html
+.venv/bin/codex-usage codex cost --today
+.venv/bin/codex-usage codex cost-chart --today --output cost.html
 .venv/bin/codex-usage codex report --date 2026-05-10 --lang zh
 .venv/bin/codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 ```
@@ -67,6 +69,8 @@ Windows PowerShell:
 ```powershell
 .\.venv\Scripts\codex-usage.exe codex report --today
 .\.venv\Scripts\codex-usage.exe codex chart --today --output usage.html
+.\.venv\Scripts\codex-usage.exe codex cost --today
+.\.venv\Scripts\codex-usage.exe codex cost-chart --today --output cost.html
 .\.venv\Scripts\codex-usage.exe codex report --date 2026-05-10 --lang zh
 .\.venv\Scripts\codex-usage.exe codex export --date 2026-05-10 --format csv --output codex-logs.csv
 ```
@@ -107,6 +111,8 @@ py -3 -m venv .venv
 - reasoning output tokens
 - total tokens
 - primary and secondary rate-limit percentages
+- API-equivalent cost estimate
+- Codex credits equivalent estimate
 - task groups
 - manual subscription usage snapshots
 - imported transcript turns
@@ -124,6 +130,8 @@ codex-usage codex report --today
 codex-usage codex report --date 2026-05-10
 codex-usage codex report --since 7d
 codex-usage codex chart --today --output usage.html
+codex-usage codex cost --today
+codex-usage codex cost-chart --today --output cost.html
 codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 
 codex-usage init
@@ -171,9 +179,39 @@ codex-usage codex report --today --codex-home /path/to/.codex
 ```bash
 codex-usage codex chart --today --lang zh --output usage.html
 codex-usage codex chart --date 2026-05-10 --output usage.html
+codex-usage codex cost-chart --today --output cost.html
 ```
 
 The chart command writes a static HTML file with inline SVG charts. It does not require Node.js, a browser server, or external CDN assets.
+
+## Cost Estimates
+
+```bash
+codex-usage codex cost --today
+codex-usage codex cost --today --json
+codex-usage codex cost-chart --today --output cost.html
+```
+
+Cost estimates default to a GPT-5.5-style rate card:
+
+```text
+non-cached input: $5 / 1M tokens
+cached input: $0.5 / 1M tokens
+output: $30 / 1M tokens
+Codex credits: 25 credits / $1
+```
+
+Override rates when the model or rate card changes:
+
+```bash
+codex-usage codex cost --today \
+  --input-rate 5 \
+  --cached-input-rate 0.5 \
+  --output-rate 30 \
+  --credits-per-usd 25
+```
+
+Cost output is an API-equivalent estimate from local Codex `token_count` logs, not a subscription bill. Reasoning tokens are displayed for context and are already included in output tokens, so they are not billed again.
 
 ## Troubleshooting
 

@@ -12,4 +12,7 @@ dist/
 usage.csv
 usage.html
 codex-usage.html
+codex-usage-*.html
+codex-cost.html
+codex-cost-*.html
 codex-logs.csv
