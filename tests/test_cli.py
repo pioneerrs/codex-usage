@@ -255,6 +255,44 @@ class CliTests(unittest.TestCase):
         self.assertIn("<svg", cost_chart)
         self.assertIn("$0.00", cost_chart)
 
+        code, out, err = self.run_cli(
+            "codex",
+            "summary",
+            "--date",
+            "2026-05-10",
+            "--codex-home",
+            str(codex_home),
+            "--lang",
+            "zh",
+            "--usage-output",
+            "summary-usage.html",
+            "--cost-output",
+            "summary-cost.html",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("Codex 用量总览", out)
+        self.assertIn("API 等价金额", out)
+        self.assertIn("重点 Session", out)
+        self.assertIn("summary-usage.html", out)
+        self.assertIn("summary-cost.html", out)
+        self.assertTrue(Path("summary-usage.html").exists())
+        self.assertTrue(Path("summary-cost.html").exists())
+
+        code, out, err = self.run_cli(
+            "codex",
+            "summary",
+            "--date",
+            "2026-05-10",
+            "--codex-home",
+            str(codex_home),
+            "--lang",
+            "en",
+            "--no-charts",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("Codex Usage Summary", out)
+        self.assertIn("not written", out)
+
     def test_auto_language_uses_locale(self):
         self.run_cli("init")
         old_env = {key: os.environ.get(key) for key in ("LC_ALL", "LC_MESSAGES", "LANGUAGE", "LANG")}

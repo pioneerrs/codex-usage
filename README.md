@@ -57,6 +57,7 @@ Native Codex logs:
 
 ```bash
 .venv/bin/codex-usage codex report --today
+.venv/bin/codex-usage codex summary --today
 .venv/bin/codex-usage codex chart --today --output usage.html
 .venv/bin/codex-usage codex cost --today
 .venv/bin/codex-usage codex cost-chart --today --output cost.html
@@ -68,6 +69,7 @@ Windows PowerShell:
 
 ```powershell
 .\.venv\Scripts\codex-usage.exe codex report --today
+.\.venv\Scripts\codex-usage.exe codex summary --today
 .\.venv\Scripts\codex-usage.exe codex chart --today --output usage.html
 .\.venv\Scripts\codex-usage.exe codex cost --today
 .\.venv\Scripts\codex-usage.exe codex cost-chart --today --output cost.html
@@ -127,6 +129,7 @@ Codex log reports use local Codex `token_count` records. Imported transcript rep
 
 ```bash
 codex-usage codex report --today
+codex-usage codex summary --today
 codex-usage codex report --date 2026-05-10
 codex-usage codex report --since 7d
 codex-usage codex chart --today --output usage.html
@@ -177,12 +180,19 @@ codex-usage codex report --today --codex-home /path/to/.codex
 ## Charts
 
 ```bash
+codex-usage codex summary --today
 codex-usage codex chart --today --lang zh --output usage.html
 codex-usage codex chart --date 2026-05-10 --output usage.html
 codex-usage codex cost-chart --today --output cost.html
 ```
 
 The chart command writes a static HTML file with inline SVG charts. It does not require Node.js, a browser server, or external CDN assets.
+
+`summary` prints token, cost, rate-limit, and hot-session highlights and writes `codex-usage.html` plus `codex-cost.html` by default. Terminal-only output:
+
+```bash
+codex-usage codex summary --today --no-charts
+```
 
 ## Cost Estimates
 

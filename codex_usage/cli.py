@@ -28,6 +28,7 @@ from .codex_logs import (
     render_codex_report,
     resolve_time_window as resolve_codex_time_window,
 )
+from .codex_summary import build_codex_summary, render_codex_summary
 from .errors import UsageError
 from .reporting import (
     TEXT,
@@ -194,6 +195,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output HTML file. Defaults to codex-cost.html.",
     )
     codex_cost_chart.set_defaults(func=cmd_codex_cost_chart)
+
+    codex_summary = codex_subparsers.add_parser(
+        "summary",
+        help="Print a combined Codex usage, cost, limit, and session summary.",
+    )
+    add_codex_log_filters(codex_summary)
+    add_codex_cost_args(codex_summary)
+    codex_summary.add_argument(
+        "--usage-output",
+        default="codex-usage.html",
+        help="Usage chart HTML output. Defaults to codex-usage.html.",
+    )
+    codex_summary.add_argument(
+        "--cost-output",
+        default="codex-cost.html",
+        help="Cost chart HTML output. Defaults to codex-cost.html.",
+    )
+    codex_summary.add_argument(
+        "--no-charts",
+        action="store_true",
+        help="Do not write usage and cost chart HTML files.",
+    )
+    codex_summary.set_defaults(func=cmd_codex_summary)
 
     return parser
 
@@ -517,6 +541,45 @@ def cmd_codex_cost_chart(args: argparse.Namespace) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_codex_cost_chart_html(cost_report, lang=lang), encoding="utf-8")
     print(f"{COST_TEXT[lang]['written']} {output}")
+
+
+def cmd_codex_summary(args: argparse.Namespace) -> None:
+    data_dir = storage_dir_from(args.data_dir)
+    try:
+        config = load_config(data_dir)
+    except UsageError:
+        config = {}
+    lang = normalize_lang(args.lang or config.get("defaultLanguage", "auto"))
+    _validate_cost_rates(args)
+    usage_report = _codex_report_from_args(args)
+    cost_report = build_codex_cost_report(
+        usage_report,
+        model_label=args.model_label,
+        input_rate_per_m=args.input_rate,
+        cached_input_rate_per_m=args.cached_input_rate,
+        output_rate_per_m=args.output_rate,
+        credits_per_usd=args.credits_per_usd,
+    )
+    usage_output = None
+    cost_output = None
+    if not args.no_charts:
+        usage_path = Path(args.usage_output)
+        usage_path.parent.mkdir(parents=True, exist_ok=True)
+        usage_path.write_text(render_codex_chart_html(usage_report, lang=lang), encoding="utf-8")
+        usage_output = str(usage_path)
+
+        cost_path = Path(args.cost_output)
+        cost_path.parent.mkdir(parents=True, exist_ok=True)
+        cost_path.write_text(render_codex_cost_chart_html(cost_report, lang=lang), encoding="utf-8")
+        cost_output = str(cost_path)
+
+    summary = build_codex_summary(
+        usage_report,
+        cost_report,
+        usage_chart_path=usage_output,
+        cost_chart_path=cost_output,
+    )
+    print(render_codex_summary(summary, lang=lang))
 
 
 def _codex_report_from_args(args: argparse.Namespace) -> Dict[str, Any]:
