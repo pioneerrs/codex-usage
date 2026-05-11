@@ -133,6 +133,8 @@ codex-usage group list
 codex-usage snapshot --group repo-refactor --usage 42
 codex-usage turn add --group repo-refactor --file transcript.md --task-type medium_code_task --requests 4 --tool-calls 12
 codex-usage report --group repo-refactor --lang zh
+codex-usage report --breakdown model --lang zh
+codex-usage report --breakdown all --lang zh
 codex-usage report --since 7d --lang zh
 codex-usage export --format csv --output usage.csv
 ```
@@ -172,7 +174,7 @@ codex-usage codex chart --today --lang zh --output usage.html
 codex-usage codex chart --date 2026-05-10 --lang zh --output usage.html
 ```
 
-图表命令会生成一个静态 HTML 文件，图表使用内联 SVG，不需要 Node.js、浏览器服务或外部 CDN。
+图表命令会生成一个静态 HTML 文件，图表使用内联 SVG，包含 token 构成、时间线、primary/secondary 限额百分比图，并在限额折线末端显示最新百分比。不需要 Node.js、浏览器服务或外部 CDN。
 
 ## 常见问题
 

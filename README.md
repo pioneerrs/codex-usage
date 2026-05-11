@@ -134,6 +134,8 @@ codex-usage snapshot --group repo-refactor --usage 42
 codex-usage turn add --group repo-refactor --file transcript.md --task-type medium_code_task --requests 4 --tool-calls 12
 codex-usage report --group repo-refactor
 codex-usage report --group repo-refactor --lang zh
+codex-usage report --breakdown model
+codex-usage report --breakdown all
 codex-usage report --since 7d
 codex-usage export --format csv --output usage.csv
 ```
@@ -173,7 +175,7 @@ codex-usage codex chart --today --lang zh --output usage.html
 codex-usage codex chart --date 2026-05-10 --output usage.html
 ```
 
-The chart command writes a static HTML file with inline SVG charts. It does not require Node.js, a browser server, or external CDN assets.
+The chart command writes a static HTML file with inline SVG charts. It includes token mix, timeline, and primary/secondary rate-limit percentage charts with visible latest percentage labels. It does not require Node.js, a browser server, or external CDN assets.
 
 ## Troubleshooting
 

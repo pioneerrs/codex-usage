@@ -49,7 +49,9 @@ TEXT = {
             "Requests Est.",
             "Tool Calls",
             "Visible Tokens Est.",
+            "Visible Share",
             "Effective Tokens Est.",
+            "Effective Share",
         ],
     },
     "zh": {
@@ -83,7 +85,9 @@ TEXT = {
             "估算请求",
             "工具调用",
             "可见Token估算",
+            "可见占比",
             "有效Token估算",
+            "有效占比",
         ],
     },
 }
@@ -370,7 +374,9 @@ def render_breakdown(title: str, rows: Sequence[Dict[str, Any]], lang: str = "en
             str(row["requestsEstimated"]),
             str(row["toolCalls"]),
             _format_int(row["visibleTokensEstimated"]),
+            _format_share(row.get("visibleSharePercent")),
             _format_int(row["effectiveTokensEstimated"]),
+            _format_share(row.get("effectiveSharePercent")),
         ]
         for row in rows
     ]
@@ -385,8 +391,12 @@ def render_breakdown(title: str, rows: Sequence[Dict[str, Any]], lang: str = "en
 
 def aggregate_breakdown(turns: Sequence[Dict[str, Any]], key_name: str) -> List[Dict[str, Any]]:
     buckets: Dict[str, Dict[str, Any]] = {}
+    total_visible = 0
+    total_effective = 0
     for turn in turns:
         key = str(turn.get(key_name) or "unknown")
+        visible = int(turn.get("visibleTokensEstimated") or 0)
+        effective = int(round(float(turn.get("effectiveTokensEstimated") or 0)))
         bucket = buckets.setdefault(
             key,
             {
@@ -401,8 +411,14 @@ def aggregate_breakdown(turns: Sequence[Dict[str, Any]], key_name: str) -> List[
         bucket["turns"] += 1
         bucket["requestsEstimated"] += int(turn.get("requestCountEstimated") or 0)
         bucket["toolCalls"] += int(turn.get("toolCallCount") or 0)
-        bucket["visibleTokensEstimated"] += int(turn.get("visibleTokensEstimated") or 0)
-        bucket["effectiveTokensEstimated"] += int(round(float(turn.get("effectiveTokensEstimated") or 0)))
+        bucket["visibleTokensEstimated"] += visible
+        bucket["effectiveTokensEstimated"] += effective
+        total_visible += visible
+        total_effective += effective
+
+    for bucket in buckets.values():
+        bucket["visibleSharePercent"] = _percentage(bucket["visibleTokensEstimated"], total_visible)
+        bucket["effectiveSharePercent"] = _percentage(bucket["effectiveTokensEstimated"], total_effective)
     return sorted(buckets.values(), key=lambda row: row["key"])
 
 
@@ -465,3 +481,15 @@ def _format_optional_number(value: Optional[float], lang: str = "en") -> str:
     if value is None:
         return text["unavailable"]
     return f"{round(value):,}"
+
+
+def _percentage(value: float, total: float) -> Optional[float]:
+    if total <= 0:
+        return None
+    return round(value / total * 100, 1)
+
+
+def _format_share(value: Optional[float]) -> str:
+    if value is None:
+        return "0%"
+    return f"{value:g}%"
