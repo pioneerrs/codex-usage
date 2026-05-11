@@ -57,6 +57,7 @@ Codex 本地日志：
 
 ```bash
 .venv/bin/codex-usage codex report --today
+.venv/bin/codex-usage codex summary --today --lang zh
 .venv/bin/codex-usage codex chart --today --lang zh --output usage.html
 .venv/bin/codex-usage codex cost --today --lang zh
 .venv/bin/codex-usage codex cost-chart --today --lang zh --output cost.html
@@ -68,6 +69,7 @@ Windows PowerShell：
 
 ```powershell
 .\.venv\Scripts\codex-usage.exe codex report --today --lang zh
+.\.venv\Scripts\codex-usage.exe codex summary --today --lang zh
 .\.venv\Scripts\codex-usage.exe codex chart --today --lang zh --output usage.html
 .\.venv\Scripts\codex-usage.exe codex cost --today --lang zh
 .\.venv\Scripts\codex-usage.exe codex cost-chart --today --lang zh --output cost.html
@@ -127,6 +129,7 @@ Codex 日志报告读取本地 `token_count` 记录。导入对话记录报告�
 
 ```bash
 codex-usage codex report --today
+codex-usage codex summary --today --lang zh
 codex-usage codex report --date 2026-05-10 --lang zh
 codex-usage codex report --since 7d --lang zh
 codex-usage codex chart --today --lang zh --output usage.html
@@ -176,12 +179,19 @@ codex-usage codex report --today --codex-home /path/to/.codex
 ## 图表
 
 ```bash
+codex-usage codex summary --today --lang zh
 codex-usage codex chart --today --lang zh --output usage.html
 codex-usage codex chart --date 2026-05-10 --lang zh --output usage.html
 codex-usage codex cost-chart --today --lang zh --output cost.html
 ```
 
 图表命令会生成一个静态 HTML 文件，图表使用内联 SVG，不需要 Node.js、浏览器服务或外部 CDN。
+
+`summary` 会同时输出 token、费用、限额和重点 session，并默认写入 `codex-usage.html` 与 `codex-cost.html`。如果只想看终端报告：
+
+```bash
+codex-usage codex summary --today --lang zh --no-charts
+```
 
 ## 费用估算
 
