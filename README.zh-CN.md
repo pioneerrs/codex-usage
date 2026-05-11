@@ -58,6 +58,8 @@ Codex 本地日志：
 ```bash
 .venv/bin/codex-usage codex report --today
 .venv/bin/codex-usage codex chart --today --lang zh --output usage.html
+.venv/bin/codex-usage codex cost --today --lang zh
+.venv/bin/codex-usage codex cost-chart --today --lang zh --output cost.html
 .venv/bin/codex-usage codex report --date 2026-05-10 --lang zh
 .venv/bin/codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 ```
@@ -67,6 +69,8 @@ Windows PowerShell：
 ```powershell
 .\.venv\Scripts\codex-usage.exe codex report --today --lang zh
 .\.venv\Scripts\codex-usage.exe codex chart --today --lang zh --output usage.html
+.\.venv\Scripts\codex-usage.exe codex cost --today --lang zh
+.\.venv\Scripts\codex-usage.exe codex cost-chart --today --lang zh --output cost.html
 .\.venv\Scripts\codex-usage.exe codex report --date 2026-05-10 --lang zh
 .\.venv\Scripts\codex-usage.exe codex export --date 2026-05-10 --format csv --output codex-logs.csv
 ```
@@ -107,6 +111,8 @@ py -3 -m venv .venv
 - reasoning output tokens
 - total tokens
 - primary / secondary 限额百分比
+- API 等价费用估算
+- Codex credits 等价估算
 - 任务组
 - 手动订阅用量快照
 - 导入的对话记录 turn
@@ -124,6 +130,8 @@ codex-usage codex report --today
 codex-usage codex report --date 2026-05-10 --lang zh
 codex-usage codex report --since 7d --lang zh
 codex-usage codex chart --today --lang zh --output usage.html
+codex-usage codex cost --today --lang zh
+codex-usage codex cost-chart --today --lang zh --output cost.html
 codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 
 codex-usage init
@@ -170,9 +178,39 @@ codex-usage codex report --today --codex-home /path/to/.codex
 ```bash
 codex-usage codex chart --today --lang zh --output usage.html
 codex-usage codex chart --date 2026-05-10 --lang zh --output usage.html
+codex-usage codex cost-chart --today --lang zh --output cost.html
 ```
 
 图表命令会生成一个静态 HTML 文件，图表使用内联 SVG，不需要 Node.js、浏览器服务或外部 CDN。
+
+## 费用估算
+
+```bash
+codex-usage codex cost --today --lang zh
+codex-usage codex cost --today --lang zh --json
+codex-usage codex cost-chart --today --lang zh --output cost.html
+```
+
+费用估算默认按 GPT-5.5 口径折算：
+
+```text
+非缓存 input: $5 / 1M tokens
+cached input: $0.5 / 1M tokens
+output: $30 / 1M tokens
+Codex credits: 25 credits / $1
+```
+
+如果模型或 rate card 变化，可以传入：
+
+```bash
+codex-usage codex cost --today \
+  --input-rate 5 \
+  --cached-input-rate 0.5 \
+  --output-rate 30 \
+  --credits-per-usd 25
+```
+
+费用结果是基于本机 Codex `token_count` 日志的 API 等价估算，不代表订阅真实账单。Reasoning token 只做展示，已经包含在 output 口径中，不重复计费。
 
 ## 常见问题
 

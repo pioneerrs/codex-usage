@@ -218,6 +218,43 @@ class CliTests(unittest.TestCase):
         self.assertIn("Cached Input", chart)
         self.assertIn("220", chart)
 
+        code, out, err = self.run_cli(
+            "codex",
+            "cost",
+            "--date",
+            "2026-05-10",
+            "--codex-home",
+            str(codex_home),
+            "--json",
+        )
+        self.assertEqual(code, 0, err)
+        cost = json.loads(out)
+        self.assertEqual(cost["summary"]["totalTokens"], 220)
+        self.assertEqual(cost["lineItems"][0]["tokens"], 100)
+        self.assertEqual(cost["lineItems"][1]["tokens"], 100)
+        self.assertEqual(cost["lineItems"][2]["tokens"], 20)
+        self.assertAlmostEqual(cost["summary"]["totalCostUSD"], 0.00115, places=8)
+        self.assertAlmostEqual(cost["summary"]["totalCredits"], 0.02875, places=8)
+
+        code, out, err = self.run_cli(
+            "codex",
+            "cost-chart",
+            "--date",
+            "2026-05-10",
+            "--codex-home",
+            str(codex_home),
+            "--output",
+            "cost.html",
+            "--lang",
+            "zh",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("已写入 Codex 费用图表", out)
+        cost_chart = Path("cost.html").read_text(encoding="utf-8")
+        self.assertIn("Codex API 等价费用估算", cost_chart)
+        self.assertIn("<svg", cost_chart)
+        self.assertIn("$0.00", cost_chart)
+
     def test_auto_language_uses_locale(self):
         self.run_cli("init")
         old_env = {key: os.environ.get(key) for key in ("LC_ALL", "LC_MESSAGES", "LANGUAGE", "LANG")}

@@ -8,6 +8,18 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from .charts import TEXT as CHART_TEXT
 from .charts import render_codex_chart_html
+from .codex_cost import (
+    DEFAULT_CACHED_INPUT_RATE_PER_M,
+    DEFAULT_CREDITS_PER_USD,
+    DEFAULT_INPUT_RATE_PER_M,
+    DEFAULT_MODEL_LABEL,
+    DEFAULT_OUTPUT_RATE_PER_M,
+    TEXT as COST_TEXT,
+    build_codex_cost_report,
+    export_codex_cost_report,
+    render_codex_cost_chart_html,
+    render_codex_cost_report,
+)
 from .codex_logs import (
     aggregate_codex_logs,
     default_codex_home,
@@ -162,6 +174,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     codex_chart.set_defaults(func=cmd_codex_chart)
 
+    codex_cost = codex_subparsers.add_parser("cost", help="Estimate API-equivalent cost from Codex logs.")
+    add_codex_log_filters(codex_cost)
+    add_codex_cost_args(codex_cost)
+    codex_cost.add_argument("--json", action="store_true", help="Print cost estimate as JSON.")
+    codex_cost.add_argument("--output", help="Optional JSON output file.")
+    codex_cost.set_defaults(func=cmd_codex_cost)
+
+    codex_cost_chart = codex_subparsers.add_parser(
+        "cost-chart",
+        help="Write a static HTML/SVG API-equivalent cost chart.",
+    )
+    add_codex_log_filters(codex_cost_chart)
+    add_codex_cost_args(codex_cost_chart)
+    codex_cost_chart.add_argument(
+        "--output",
+        "-o",
+        default="codex-cost.html",
+        help="Output HTML file. Defaults to codex-cost.html.",
+    )
+    codex_cost_chart.set_defaults(func=cmd_codex_cost_chart)
+
     return parser
 
 
@@ -199,6 +232,38 @@ def add_codex_log_filters(parser: argparse.ArgumentParser, include_lang: bool = 
             choices=("auto", "en", "zh"),
             help="Output language. Defaults to config defaultLanguage; auto follows locale.",
         )
+
+
+def add_codex_cost_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--model-label",
+        default=DEFAULT_MODEL_LABEL,
+        help=f"Pricing label shown in reports. Defaults to {DEFAULT_MODEL_LABEL}.",
+    )
+    parser.add_argument(
+        "--input-rate",
+        type=float,
+        default=DEFAULT_INPUT_RATE_PER_M,
+        help=f"Non-cached input USD per 1M tokens. Defaults to {DEFAULT_INPUT_RATE_PER_M:g}.",
+    )
+    parser.add_argument(
+        "--cached-input-rate",
+        type=float,
+        default=DEFAULT_CACHED_INPUT_RATE_PER_M,
+        help=f"Cached input USD per 1M tokens. Defaults to {DEFAULT_CACHED_INPUT_RATE_PER_M:g}.",
+    )
+    parser.add_argument(
+        "--output-rate",
+        type=float,
+        default=DEFAULT_OUTPUT_RATE_PER_M,
+        help=f"Output USD per 1M tokens. Defaults to {DEFAULT_OUTPUT_RATE_PER_M:g}.",
+    )
+    parser.add_argument(
+        "--credits-per-usd",
+        type=float,
+        default=DEFAULT_CREDITS_PER_USD,
+        help=f"Codex credits per USD for equivalent credits. Defaults to {DEFAULT_CREDITS_PER_USD:g}.",
+    )
 
 
 def cmd_init(args: argparse.Namespace) -> None:
@@ -420,6 +485,40 @@ def cmd_codex_chart(args: argparse.Namespace) -> None:
     print(f"{CHART_TEXT[lang]['written']} {output}")
 
 
+def cmd_codex_cost(args: argparse.Namespace) -> None:
+    data_dir = storage_dir_from(args.data_dir)
+    try:
+        config = load_config(data_dir)
+    except UsageError:
+        config = {}
+    lang = normalize_lang(args.lang or config.get("defaultLanguage", "auto"))
+    cost_report = _codex_cost_report_from_args(args)
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        export_codex_cost_report(cost_report, output)
+    if args.json:
+        import json
+
+        print(json.dumps(cost_report, ensure_ascii=False, indent=2))
+    else:
+        print(render_codex_cost_report(cost_report, lang=lang))
+
+
+def cmd_codex_cost_chart(args: argparse.Namespace) -> None:
+    data_dir = storage_dir_from(args.data_dir)
+    try:
+        config = load_config(data_dir)
+    except UsageError:
+        config = {}
+    lang = normalize_lang(args.lang or config.get("defaultLanguage", "auto"))
+    cost_report = _codex_cost_report_from_args(args)
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(render_codex_cost_chart_html(cost_report, lang=lang), encoding="utf-8")
+    print(f"{COST_TEXT[lang]['written']} {output}")
+
+
 def _codex_report_from_args(args: argparse.Namespace) -> Dict[str, Any]:
     start, end = resolve_codex_time_window(
         today=args.today,
@@ -434,6 +533,26 @@ def _codex_report_from_args(args: argparse.Namespace) -> Dict[str, Any]:
         codex_home=Path(args.codex_home),
         include_archived=not args.no_archived,
     )
+
+
+def _codex_cost_report_from_args(args: argparse.Namespace) -> Dict[str, Any]:
+    _validate_cost_rates(args)
+    usage_report = _codex_report_from_args(args)
+    return build_codex_cost_report(
+        usage_report,
+        model_label=args.model_label,
+        input_rate_per_m=args.input_rate,
+        cached_input_rate_per_m=args.cached_input_rate,
+        output_rate_per_m=args.output_rate,
+        credits_per_usd=args.credits_per_usd,
+    )
+
+
+def _validate_cost_rates(args: argparse.Namespace) -> None:
+    for name in ("input_rate", "cached_input_rate", "output_rate", "credits_per_usd"):
+        value = getattr(args, name)
+        if value < 0:
+            raise UsageError(f"`--{name.replace('_', '-')}` must be 0 or greater.")
 
 
 def _aggregate_from_args(
