@@ -4,6 +4,21 @@ Local CLI for Codex token usage reports.
 
 [中文文档](README.zh-CN.md)
 
+## Preview
+
+<p align="center">
+  <img src="docs/assets/codex-usage-summary.svg" alt="Codex usage summary preview" width="860" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/codex-cost-breakdown.svg" alt="Codex cost breakdown preview" width="420" />
+  <img src="docs/assets/codex-session-hotspots.svg" alt="Codex hot sessions preview" width="420" />
+</p>
+
+<p align="center">
+  <sub>Preview images use anonymized example data. Real reports come from local Codex <code>token_count</code> logs.</sub>
+</p>
+
 ## Community
 
 WeChat group:

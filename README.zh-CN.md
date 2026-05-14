@@ -4,6 +4,21 @@ Codex token 用量统计命令行工具。
 
 [English](README.md)
 
+## 统计预览
+
+<p align="center">
+  <img src="docs/assets/codex-usage-summary.svg" alt="Codex 用量统计预览" width="860" />
+</p>
+
+<p align="center">
+  <img src="docs/assets/codex-cost-breakdown.svg" alt="Codex 费用拆分预览" width="420" />
+  <img src="docs/assets/codex-session-hotspots.svg" alt="Codex 高消耗 session 预览" width="420" />
+</p>
+
+<p align="center">
+  <sub>图中是匿名示例数据。实际报告由本机 Codex <code>token_count</code> 日志生成。</sub>
+</p>
+
 ## 交流群
 
 微信群：
