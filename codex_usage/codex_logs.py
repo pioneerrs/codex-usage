@@ -30,7 +30,7 @@ TEXT = {
         "notes": "Notes:",
         "note_recorded": "Values come from local Codex session token_count events.",
         "note_cached": "cached input is included in input and is usually cheaper than fresh input.",
-        "note_limits": "Primary and secondary percentages are observed rate-limit snapshots, not cash balances.",
+        "note_limits": "Rate-limit used percentages come from Codex logs; remaining is 100% minus used, matching Settings. If multiple reset windows appear, compare the Reset value with Settings.",
         "headers": [
             "Sessions",
             "Events",
@@ -41,7 +41,9 @@ TEXT = {
             "Reasoning",
             "Total",
         ],
-        "rate_headers": ["Limit", "First", "Latest", "Delta", "Max", "Reset"],
+        "rate_headers": ["Limit", "Used First", "Used Latest", "Remaining", "Used Delta", "Used Max", "Reset"],
+        "rate_windows": "Rate-limit Windows",
+        "window_headers": ["Limit", "Reset", "Latest Event", "Used", "Remaining", "Snapshots"],
         "session_headers": ["Session", "Last Event", "Total", "Output", "Reasoning"],
         "primary": "primary",
         "secondary": "secondary",
@@ -57,7 +59,7 @@ TEXT = {
         "notes": "说明：",
         "note_recorded": "数值来自本机 Codex session 日志里的 token_count 事件。",
         "note_cached": "cached input 是 input 的子集，通常比非缓存 input 便宜。",
-        "note_limits": "primary 和 secondary 百分比是观察到的限额快照，不是现金余额。",
+        "note_limits": "限额已用百分比来自 Codex 日志；剩余百分比按 100% - 已用计算，对齐 Settings 的 Usage remaining。如果出现多个重置窗口，以 Settings 显示的重置日期为准匹配。",
         "headers": [
             "Sessions",
             "事件数",
@@ -68,7 +70,9 @@ TEXT = {
             "Reasoning",
             "Total",
         ],
-        "rate_headers": ["限额", "起始", "最新", "变化", "最高", "重置时间"],
+        "rate_headers": ["限额", "已用起始", "已用最新", "剩余最新", "已用变化", "已用最高", "重置时间"],
+        "rate_windows": "限额窗口",
+        "window_headers": ["限额", "重置时间", "最后快照", "已用", "剩余", "快照数"],
         "session_headers": ["Session", "最后事件", "Total", "Output", "Reasoning"],
         "primary": "primary",
         "secondary": "secondary",
@@ -265,6 +269,9 @@ def render_codex_report(report: Dict[str, Any], lang: str = "en") -> str:
         _rate_row(text["secondary"], "secondary", summary, text["unavailable"]),
     ]
     lines.extend(["", *render_table(text["rate_headers"], rate_rows)])
+    window_rows = _rate_window_rows(summary, text, text["unavailable"])
+    if window_rows:
+        lines.extend(["", text["rate_windows"], *render_table(text["window_headers"], window_rows)])
 
     session_rows = sorted(report["sessions"], key=lambda row: row["lastEventAt"])[-8:]
     lines.extend(
@@ -319,11 +326,13 @@ def export_codex_report(report: Dict[str, Any], output: Path, fmt: str) -> None:
         "totalTokens",
         "primaryUsedPercentFirst",
         "primaryUsedPercentLatest",
+        "primaryRemainingPercentLatest",
         "primaryUsedPercentDelta",
         "primaryUsedPercentMax",
         "primaryResetsAt",
         "secondaryUsedPercentFirst",
         "secondaryUsedPercentLatest",
+        "secondaryRemainingPercentLatest",
         "secondaryUsedPercentDelta",
         "secondaryUsedPercentMax",
         "secondaryResetsAt",
@@ -370,18 +379,22 @@ def _rate_summary_fields(events: Sequence[Optional[Dict[str, Any]]]) -> Dict[str
         if not values:
             fields[f"{key}First"] = None
             fields[f"{key}Latest"] = None
+            fields[f"{prefix}RemainingPercentLatest"] = None
             fields[f"{key}Delta"] = None
             fields[f"{key}Max"] = None
             fields[f"{prefix}ResetsAt"] = None
+            fields[f"{prefix}Windows"] = []
             continue
         values.sort(key=lambda item: item["timestamp"])
         first = values[0][key]
         latest = values[-1][key]
         fields[f"{key}First"] = first
         fields[f"{key}Latest"] = latest
+        fields[f"{prefix}RemainingPercentLatest"] = _remaining_percent(latest)
         fields[f"{key}Delta"] = round(latest - first, 4) if first is not None and latest is not None else None
         fields[f"{key}Max"] = max(value[key] for value in values)
         fields[f"{prefix}ResetsAt"] = values[-1].get(f"{prefix}ResetsAt")
+        fields[f"{prefix}Windows"] = _rate_windows(values, prefix)
     return fields
 
 
@@ -391,10 +404,61 @@ def _rate_row(label: str, prefix: str, summary: Dict[str, Any], unavailable: str
         label,
         _format_percent(summary.get(f"{key}First"), unavailable),
         _format_percent(summary.get(f"{key}Latest"), unavailable),
+        _format_percent(summary.get(f"{prefix}RemainingPercentLatest"), unavailable),
         _format_percent(summary.get(f"{key}Delta"), unavailable, signed=True),
         _format_percent(summary.get(f"{key}Max"), unavailable),
         str(summary.get(f"{prefix}ResetsAt") or unavailable),
     ]
+
+
+def _remaining_percent(used_percent: Optional[float]) -> Optional[float]:
+    if used_percent is None:
+        return None
+    return round(max(0.0, min(100.0, 100.0 - float(used_percent))), 4)
+
+
+def _rate_windows(snapshots: Sequence[Dict[str, Any]], prefix: str) -> List[Dict[str, Any]]:
+    key = f"{prefix}UsedPercent"
+    reset_key = f"{prefix}ResetsAt"
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for snapshot in snapshots:
+        reset_at = snapshot.get(reset_key)
+        reset_label = str(reset_at) if reset_at else ""
+        grouped.setdefault(reset_label, []).append(snapshot)
+
+    windows: List[Dict[str, Any]] = []
+    for reset_label, rows in grouped.items():
+        rows.sort(key=lambda item: item["timestamp"])
+        latest = rows[-1]
+        used = latest.get(key)
+        windows.append(
+            {
+                "resetsAt": reset_label or None,
+                "latestAt": latest["timestamp"].isoformat(),
+                "usedPercentLatest": used,
+                "remainingPercentLatest": _remaining_percent(used),
+                "snapshotCount": len(rows),
+            }
+        )
+    windows.sort(key=lambda item: (str(item.get("latestAt") or ""), str(item.get("resetsAt") or "")), reverse=True)
+    return windows
+
+
+def _rate_window_rows(summary: Dict[str, Any], text: Dict[str, Any], unavailable: str) -> List[List[str]]:
+    rows: List[List[str]] = []
+    for prefix in ("primary", "secondary"):
+        for window in summary.get(f"{prefix}Windows") or []:
+            rows.append(
+                [
+                    text[prefix],
+                    str(window.get("resetsAt") or unavailable),
+                    str(window.get("latestAt") or unavailable),
+                    _format_percent(window.get("usedPercentLatest"), unavailable),
+                    _format_percent(window.get("remainingPercentLatest"), unavailable),
+                    _format_int(window.get("snapshotCount")),
+                ]
+            )
+    return rows
 
 
 def _usage_delta(base: Dict[str, int], current: Dict[str, int]) -> Dict[str, int]:

@@ -127,7 +127,7 @@ py -3 -m venv .venv
 - output tokens
 - reasoning output tokens
 - total tokens
-- primary / secondary 限额百分比
+- primary / secondary 限额已用与剩余百分比
 - API 等价费用估算
 - Codex credits 等价估算
 - 任务组

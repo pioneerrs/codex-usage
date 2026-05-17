@@ -127,7 +127,7 @@ py -3 -m venv .venv
 - output tokens
 - reasoning output tokens
 - total tokens
-- primary and secondary rate-limit percentages
+- primary and secondary used / remaining rate-limit percentages
 - API-equivalent cost estimate
 - Codex credits equivalent estimate
 - task groups

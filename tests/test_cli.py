@@ -182,6 +182,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["reasoningOutputTokens"], 3)
         self.assertEqual(payload["summary"]["totalTokens"], 220)
         self.assertEqual(payload["summary"]["secondaryUsedPercentLatest"], 11)
+        self.assertEqual(payload["summary"]["secondaryRemainingPercentLatest"], 89)
+        self.assertEqual(payload["summary"]["secondaryWindows"][0]["remainingPercentLatest"], 89)
         self.assertEqual(sum(row["totalTokens"] for row in payload["timeline"]), 220)
 
         code, report, err = self.run_cli(
@@ -272,6 +274,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertIn("Codex 用量总览", out)
         self.assertIn("API 等价金额", out)
+        self.assertIn("剩余最新", out)
+        self.assertIn("限额窗口", out)
         self.assertIn("重点 Session", out)
         self.assertIn("summary-usage.html", out)
         self.assertIn("summary-cost.html", out)
