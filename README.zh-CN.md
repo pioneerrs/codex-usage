@@ -14,7 +14,7 @@ Codex token 用量统计命令行工具。
 
 <p align="center">
   <img src="docs/assets/codex-cost-breakdown.svg" alt="Codex 费用拆分预览" width="420" />
-  <img src="docs/assets/codex-session-hotspots.svg" alt="Codex 高消耗 session 预览" width="420" />
+  <img src="docs/assets/codex-session-hotspots.svg" alt="Codex 限额和高消耗预览" width="420" />
 </p>
 
 <p align="center">

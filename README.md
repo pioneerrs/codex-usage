@@ -14,7 +14,7 @@ Usage dashboard: [GitHub Pages](https://crisxuan.github.io/codex-usage/) · [3-h
 
 <p align="center">
   <img src="docs/assets/codex-cost-breakdown.svg" alt="Codex cost breakdown preview" width="420" />
-  <img src="docs/assets/codex-session-hotspots.svg" alt="Codex hot sessions preview" width="420" />
+  <img src="docs/assets/codex-session-hotspots.svg" alt="Codex limits and hotspots preview" width="420" />
 </p>
 
 <p align="center">
