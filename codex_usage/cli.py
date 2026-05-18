@@ -29,6 +29,14 @@ from .codex_logs import (
     resolve_time_window as resolve_codex_time_window,
 )
 from .codex_summary import build_codex_summary, render_codex_summary
+from .dashboard import (
+    TEXT as DASHBOARD_TEXT,
+    build_dashboard_snapshot,
+    load_dashboard_history,
+    render_dashboard_html,
+    upsert_dashboard_snapshot,
+    write_dashboard_history,
+)
 from .errors import UsageError
 from .reporting import (
     TEXT,
@@ -218,6 +226,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not write usage and cost chart HTML files.",
     )
     codex_summary.set_defaults(func=cmd_codex_summary)
+
+    codex_dashboard = codex_subparsers.add_parser(
+        "dashboard",
+        help="Append a rolling usage snapshot and write a public dashboard HTML file.",
+    )
+    add_codex_log_filters(codex_dashboard)
+    add_codex_cost_args(codex_dashboard)
+    codex_dashboard.add_argument(
+        "--history",
+        default="docs/usage/hourly-history.json",
+        help="Snapshot history JSON file. Defaults to docs/usage/hourly-history.json.",
+    )
+    codex_dashboard.add_argument(
+        "--output",
+        "-o",
+        default="docs/usage/hourly-latest.html",
+        help="Dashboard HTML output. Defaults to docs/usage/hourly-latest.html.",
+    )
+    codex_dashboard.add_argument(
+        "--interval-hours",
+        type=int,
+        default=3,
+        help="Bucket snapshots by this many hours. Defaults to 3.",
+    )
+    codex_dashboard.add_argument(
+        "--max-snapshots",
+        type=int,
+        default=240,
+        help="Keep only the newest N snapshots in history. Defaults to 240.",
+    )
+    codex_dashboard.add_argument(
+        "--no-append",
+        action="store_true",
+        help="Render from existing history plus the current snapshot without writing the history JSON.",
+    )
+    codex_dashboard.set_defaults(func=cmd_codex_dashboard)
 
     return parser
 
@@ -580,6 +624,41 @@ def cmd_codex_summary(args: argparse.Namespace) -> None:
         cost_chart_path=cost_output,
     )
     print(render_codex_summary(summary, lang=lang))
+
+
+def cmd_codex_dashboard(args: argparse.Namespace) -> None:
+    data_dir = storage_dir_from(args.data_dir)
+    try:
+        config = load_config(data_dir)
+    except UsageError:
+        config = {}
+    lang = normalize_lang(args.lang or config.get("defaultLanguage", "auto"))
+    if not any([args.today, args.date, args.since, args.from_value, args.to_value]):
+        args.since = f"{max(args.interval_hours, 1)}h"
+    _validate_cost_rates(args)
+    usage_report = _codex_report_from_args(args)
+    cost_report = build_codex_cost_report(
+        usage_report,
+        model_label=args.model_label,
+        input_rate_per_m=args.input_rate,
+        cached_input_rate_per_m=args.cached_input_rate,
+        output_rate_per_m=args.output_rate,
+        credits_per_usd=args.credits_per_usd,
+    )
+    snapshot = build_dashboard_snapshot(
+        usage_report,
+        cost_report,
+        interval_hours=max(args.interval_hours, 1),
+    )
+    history_path = Path(args.history)
+    output_path = Path(args.output)
+    history = load_dashboard_history(history_path)
+    history = upsert_dashboard_snapshot(history, snapshot, max_snapshots=args.max_snapshots)
+    if not args.no_append:
+        write_dashboard_history(history_path, history)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(render_dashboard_html(history, lang=lang), encoding="utf-8")
+    print(f"{DASHBOARD_TEXT[lang]['written']} {output_path} ({len(history)} snapshots)")
 
 
 def _codex_report_from_args(args: argparse.Namespace) -> Dict[str, Any]:

@@ -14,6 +14,7 @@ TEXT = {
         "source": "Source",
         "overview": "Overview",
         "rate_limits": "Rate Limits",
+        "rate_windows": "Rate-limit Windows",
         "hot_sessions": "Hot Sessions",
         "charts": "Charts",
         "notes": "Notes:",
@@ -27,11 +28,16 @@ TEXT = {
         "sessions": "Sessions",
         "events": "Token Events",
         "limit": "Limit",
-        "first": "First",
-        "latest": "Latest",
-        "delta": "Delta",
-        "max": "Max",
+        "used_first": "Used First",
+        "used_latest": "Used Latest",
+        "remaining_latest": "Remaining",
+        "used_delta": "Used Delta",
+        "used_max": "Used Max",
         "reset": "Reset",
+        "latest_event": "Latest Event",
+        "used": "Used",
+        "remaining": "Remaining",
+        "snapshots": "Snapshots",
         "primary": "primary",
         "secondary": "secondary",
         "session": "Session",
@@ -51,6 +57,7 @@ TEXT = {
         "note_estimate": "Token values come from local Codex token_count logs. Cost is an API-equivalent estimate, not a subscription bill.",
         "note_reasoning": "Reasoning tokens are already included in output tokens and are not charged again.",
         "note_window": "Session duration is measured only inside the selected report window.",
+        "note_rate_windows": "If multiple rate-limit reset windows appear, compare the Reset value with Settings before treating one as current.",
     },
     "zh": {
         "title": "Codex 用量总览",
@@ -58,6 +65,7 @@ TEXT = {
         "source": "数据来源",
         "overview": "总览",
         "rate_limits": "限额",
+        "rate_windows": "限额窗口",
         "hot_sessions": "重点 Session",
         "charts": "图表",
         "notes": "说明：",
@@ -71,11 +79,16 @@ TEXT = {
         "sessions": "Sessions",
         "events": "Token 事件数",
         "limit": "限额",
-        "first": "起始",
-        "latest": "最新",
-        "delta": "变化",
-        "max": "最高",
+        "used_first": "已用起始",
+        "used_latest": "已用最新",
+        "remaining_latest": "剩余最新",
+        "used_delta": "已用变化",
+        "used_max": "已用最高",
         "reset": "重置时间",
+        "latest_event": "最后快照",
+        "used": "已用",
+        "remaining": "剩余",
+        "snapshots": "快照数",
         "primary": "primary",
         "secondary": "secondary",
         "session": "Session",
@@ -95,6 +108,7 @@ TEXT = {
         "note_estimate": "Token 数值来自本机 Codex token_count 日志。费用是 API 等价估算，不代表订阅真实账单。",
         "note_reasoning": "Reasoning token 已包含在 output token 中，不重复计费。",
         "note_window": "Session 活跃时长只按当前统计窗口内的首尾事件估算。",
+        "note_rate_windows": "如果出现多个限额重置窗口，先用 Settings 里的重置日期匹配对应窗口，再判断当前剩余额度。",
     },
 }
 
@@ -152,11 +166,25 @@ def render_codex_summary(summary: Dict[str, Any], lang: str = "en") -> str:
             "",
             text["rate_limits"],
             *render_table(
-                [text["limit"], text["first"], text["latest"], text["delta"], text["max"], text["reset"]],
+                [
+                    text["limit"],
+                    text["used_first"],
+                    text["used_latest"],
+                    text["remaining_latest"],
+                    text["used_delta"],
+                    text["used_max"],
+                    text["reset"],
+                ],
                 [
                     _rate_row("primary", usage, text),
                     _rate_row("secondary", usage, text),
                 ],
+            ),
+            "",
+            text["rate_windows"],
+            *render_table(
+                [text["limit"], text["reset"], text["latest_event"], text["used"], text["remaining"], text["snapshots"]],
+                _rate_window_rows(usage, text),
             ),
             "",
             text["hot_sessions"],
@@ -195,6 +223,7 @@ def render_codex_summary(summary: Dict[str, Any], lang: str = "en") -> str:
             f"- {text['note_estimate']}",
             f"- {text['note_reasoning']}",
             f"- {text['note_window']}",
+            f"- {text['note_rate_windows']}",
         ]
     )
     return "\n".join(lines)
@@ -254,10 +283,30 @@ def _rate_row(prefix: str, usage: Dict[str, Any], text: Dict[str, str]) -> List[
         text[prefix],
         _format_percent(usage.get(f"{key}First"), text["unavailable"]),
         _format_percent(usage.get(f"{key}Latest"), text["unavailable"]),
+        _format_percent(usage.get(f"{prefix}RemainingPercentLatest"), text["unavailable"]),
         _format_percent(usage.get(f"{key}Delta"), text["unavailable"], signed=True),
         _format_percent(usage.get(f"{key}Max"), text["unavailable"]),
         str(usage.get(f"{prefix}ResetsAt") or text["unavailable"]),
     ]
+
+
+def _rate_window_rows(usage: Dict[str, Any], text: Dict[str, str]) -> List[List[str]]:
+    rows: List[List[str]] = []
+    for prefix in ("primary", "secondary"):
+        for window in usage.get(f"{prefix}Windows") or []:
+            rows.append(
+                [
+                    text[prefix],
+                    str(window.get("resetsAt") or text["unavailable"]),
+                    str(window.get("latestAt") or text["unavailable"]),
+                    _format_percent(window.get("usedPercentLatest"), text["unavailable"]),
+                    _format_percent(window.get("remainingPercentLatest"), text["unavailable"]),
+                    _format_int(window.get("snapshotCount")),
+                ]
+            )
+    if rows:
+        return rows
+    return [[text["unavailable"], text["unavailable"], text["unavailable"], text["unavailable"], text["unavailable"], "0"]]
 
 
 def _format_int(value: Any) -> str:

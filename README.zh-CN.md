@@ -4,6 +4,8 @@ Codex token 用量统计命令行工具。
 
 [English](README.md)
 
+用量主页：[GitHub Pages](https://crisxuan.github.io/codex-usage/) · [3 小时滚动看板](https://crisxuan.github.io/codex-usage/usage/hourly-latest.html) · [最新每周用量统计](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
+
 ## 统计预览
 
 <p align="center">
@@ -127,7 +129,7 @@ py -3 -m venv .venv
 - output tokens
 - reasoning output tokens
 - total tokens
-- primary / secondary 限额百分比
+- primary / secondary 限额已用与剩余百分比
 - API 等价费用估算
 - Codex credits 等价估算
 - 任务组
@@ -150,6 +152,7 @@ codex-usage codex report --since 7d --lang zh
 codex-usage codex chart --today --lang zh --output usage.html
 codex-usage codex cost --today --lang zh
 codex-usage codex cost-chart --today --lang zh --output cost.html
+codex-usage codex dashboard --since 3h --lang zh --output docs/usage/hourly-latest.html
 codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 
 codex-usage init
@@ -207,6 +210,15 @@ codex-usage codex cost-chart --today --lang zh --output cost.html
 ```bash
 codex-usage codex summary --today --lang zh --no-charts
 ```
+
+3 小时滚动看板：
+
+```bash
+codex-usage codex dashboard --since 3h --lang zh --history docs/usage/hourly-history.json --output docs/usage/hourly-latest.html
+scripts/publish_usage_dashboard.sh --publish
+```
+
+看板会保存公开版聚合快照，并渲染成 GitHub Pages 静态页面；不会包含本机路径、完整 session 名或原始 Codex 日志。
 
 ## 费用估算
 

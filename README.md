@@ -4,6 +4,8 @@ Local CLI for Codex token usage reports.
 
 [中文文档](README.zh-CN.md)
 
+Usage dashboard: [GitHub Pages](https://crisxuan.github.io/codex-usage/) · [3-hour pulse](https://crisxuan.github.io/codex-usage/usage/hourly-latest.html) · [latest weekly report](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
+
 ## Preview
 
 <p align="center">
@@ -127,7 +129,7 @@ py -3 -m venv .venv
 - output tokens
 - reasoning output tokens
 - total tokens
-- primary and secondary rate-limit percentages
+- primary and secondary used / remaining rate-limit percentages
 - API-equivalent cost estimate
 - Codex credits equivalent estimate
 - task groups
@@ -150,6 +152,7 @@ codex-usage codex report --since 7d
 codex-usage codex chart --today --output usage.html
 codex-usage codex cost --today
 codex-usage codex cost-chart --today --output cost.html
+codex-usage codex dashboard --since 3h --lang zh --output docs/usage/hourly-latest.html
 codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 
 codex-usage init
@@ -208,6 +211,15 @@ The chart command writes a static HTML file with inline SVG charts. It does not 
 ```bash
 codex-usage codex summary --today --no-charts
 ```
+
+Rolling dashboard snapshots:
+
+```bash
+codex-usage codex dashboard --since 3h --lang zh --history docs/usage/hourly-history.json --output docs/usage/hourly-latest.html
+scripts/publish_usage_dashboard.sh --publish
+```
+
+The dashboard keeps a public JSON history of aggregate snapshots and renders a static GitHub Pages view. It does not include local paths, full session names, or raw Codex logs.
 
 ## Cost Estimates
 

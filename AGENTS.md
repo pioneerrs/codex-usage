@@ -25,6 +25,8 @@ macOS, Linux, or WSL:
 .venv/bin/codex-usage codex report --today
 .venv/bin/codex-usage codex report --today --lang zh
 .venv/bin/codex-usage codex chart --today --lang zh --output usage.html
+.venv/bin/codex-usage codex dashboard --since 3h --lang zh --output docs/usage/hourly-latest.html
+./scripts/publish_usage_dashboard.sh --publish
 .venv/bin/codex-usage --help
 ```
 
@@ -37,6 +39,7 @@ Windows PowerShell:
 .\.venv\Scripts\codex-usage.exe codex report --today
 .\.venv\Scripts\codex-usage.exe codex report --today --lang zh
 .\.venv\Scripts\codex-usage.exe codex chart --today --lang zh --output usage.html
+.\.venv\Scripts\codex-usage.exe codex dashboard --since 3h --lang zh --output docs\usage\hourly-latest.html
 .\.venv\Scripts\codex-usage.exe --help
 ```
 
