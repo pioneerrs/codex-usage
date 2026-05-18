@@ -9,12 +9,12 @@ Codex token 用量统计命令行工具。
 ## 统计预览
 
 <p align="center">
-  <img src="docs/assets/codex-usage-summary.svg" alt="Codex 用量统计预览" width="860" />
+  <img src="docs/assets/codex-usage-summary.svg" alt="Codex 用量监控预览" width="760" />
 </p>
 
 <p align="center">
-  <img src="docs/assets/codex-cost-breakdown.svg" alt="Codex 费用拆分预览" width="420" />
-  <img src="docs/assets/codex-session-hotspots.svg" alt="Codex 限额和高消耗预览" width="420" />
+  <img src="docs/assets/codex-cost-breakdown.svg" alt="Codex 费用估算预览" width="360" />
+  <img src="docs/assets/codex-session-hotspots.svg" alt="Codex 监控周期和隐私预览" width="360" />
 </p>
 
 <p align="center">

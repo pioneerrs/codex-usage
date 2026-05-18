@@ -9,12 +9,12 @@ Usage dashboard: [GitHub Pages](https://crisxuan.github.io/codex-usage/) · [rol
 ## Preview
 
 <p align="center">
-  <img src="docs/assets/codex-usage-summary.svg" alt="Codex usage summary preview" width="860" />
+  <img src="docs/assets/codex-usage-summary.svg" alt="Codex usage monitor preview" width="760" />
 </p>
 
 <p align="center">
-  <img src="docs/assets/codex-cost-breakdown.svg" alt="Codex cost breakdown preview" width="420" />
-  <img src="docs/assets/codex-session-hotspots.svg" alt="Codex limits and hotspots preview" width="420" />
+  <img src="docs/assets/codex-cost-breakdown.svg" alt="Codex cost estimate preview" width="360" />
+  <img src="docs/assets/codex-session-hotspots.svg" alt="Codex cadence and privacy preview" width="360" />
 </p>
 
 <p align="center">
