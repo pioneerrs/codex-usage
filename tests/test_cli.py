@@ -297,6 +297,31 @@ class CliTests(unittest.TestCase):
         self.assertIn("Codex Usage Summary", out)
         self.assertIn("not written", out)
 
+        code, out, err = self.run_cli(
+            "codex",
+            "dashboard",
+            "--date",
+            "2026-05-10",
+            "--codex-home",
+            str(codex_home),
+            "--history",
+            "hourly-history.json",
+            "--output",
+            "hourly.html",
+            "--lang",
+            "zh",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("已写入 Codex 用量看板", out)
+        dashboard = Path("hourly.html").read_text(encoding="utf-8")
+        history = json.loads(Path("hourly-history.json").read_text(encoding="utf-8"))
+        self.assertIn("Codex 用量脉搏", dashboard)
+        self.assertIn("<svg", dashboard)
+        self.assertIn("220", dashboard)
+        self.assertEqual(history["snapshots"][0]["totalTokens"], 220)
+        self.assertNotIn(str(codex_home), dashboard)
+        self.assertNotIn(str(codex_home), json.dumps(history, ensure_ascii=False))
+
     def test_auto_language_uses_locale(self):
         self.run_cli("init")
         old_env = {key: os.environ.get(key) for key in ("LC_ALL", "LC_MESSAGES", "LANGUAGE", "LANG")}
