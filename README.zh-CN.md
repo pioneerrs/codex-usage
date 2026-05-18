@@ -4,6 +4,8 @@ Codex token 用量统计命令行工具。
 
 [English](README.md)
 
+用量主页：[GitHub Pages](https://crisxuan.github.io/codex-usage/) · [最新每周用量统计](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
+
 ## 统计预览
 
 <p align="center">

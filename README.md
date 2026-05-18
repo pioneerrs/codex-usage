@@ -4,6 +4,8 @@ Local CLI for Codex token usage reports.
 
 [中文文档](README.zh-CN.md)
 
+Usage dashboard: [GitHub Pages](https://crisxuan.github.io/codex-usage/) · [latest weekly report](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
+
 ## Preview
 
 <p align="center">
