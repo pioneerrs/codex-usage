@@ -248,7 +248,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--interval-hours",
         type=int,
         default=3,
-        help="Bucket snapshots by this many hours. Defaults to 3.",
+        help="Bucket snapshots by this many hours. Defaults to 3; set your own monitoring cadence.",
     )
     codex_dashboard.add_argument(
         "--max-snapshots",

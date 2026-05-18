@@ -4,7 +4,7 @@ Local CLI for Codex token usage reports.
 
 [中文文档](README.zh-CN.md)
 
-Usage dashboard: [GitHub Pages](https://crisxuan.github.io/codex-usage/) · [3-hour pulse](https://crisxuan.github.io/codex-usage/usage/hourly-latest.html) · [latest weekly report](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
+Usage dashboard: [GitHub Pages](https://crisxuan.github.io/codex-usage/) · [rolling dashboard example](https://crisxuan.github.io/codex-usage/usage/hourly-latest.html) · [latest weekly report](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
 
 ## Preview
 
@@ -218,6 +218,8 @@ Rolling dashboard snapshots:
 codex-usage codex dashboard --since 3h --lang zh --history docs/usage/hourly-history.json --output docs/usage/hourly-latest.html
 scripts/publish_usage_dashboard.sh --publish
 ```
+
+The dashboard interval is configurable. The public GitHub Pages site in this repository is only my 3-hour example; use `--since`, `--interval-hours`, or `CODEX_USAGE_INTERVAL_HOURS` to publish your own daily, hourly, or custom cadence.
 
 The dashboard keeps a public JSON history of aggregate snapshots and renders a static GitHub Pages view. It does not include local paths, full session names, or raw Codex logs.
 

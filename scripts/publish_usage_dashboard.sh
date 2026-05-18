@@ -85,12 +85,17 @@ trap cleanup EXIT
 
 if git ls-remote --exit-code "$REMOTE" "refs/heads/$PAGES_BRANCH" >/dev/null 2>&1; then
   git fetch "$REMOTE" "$PAGES_BRANCH"
-  git worktree add -B "$PAGES_BRANCH" "$TMP_DIR" FETCH_HEAD
+  # Handle pre-existing local pages branch names by forcing branch reset in temp worktree.
+  git worktree add --force -B "$PAGES_BRANCH" "$TMP_DIR" FETCH_HEAD
 else
-  git worktree add --detach "$TMP_DIR" HEAD
-  git -C "$TMP_DIR" switch --orphan "$PAGES_BRANCH" >/dev/null
-  git -C "$TMP_DIR" rm -rf . >/dev/null 2>&1 || true
-  find "$TMP_DIR" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+  if git show-ref --verify --quiet "refs/heads/$PAGES_BRANCH"; then
+    git worktree add --force "$TMP_DIR" "$PAGES_BRANCH"
+  else
+    git worktree add --detach "$TMP_DIR" HEAD
+    git -C "$TMP_DIR" switch --orphan "$PAGES_BRANCH" >/dev/null
+    git -C "$TMP_DIR" rm -rf . >/dev/null 2>&1 || true
+    find "$TMP_DIR" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+  fi
 fi
 
 rsync -a --exclude "usage/hourly-history.json" "$ROOT_DIR/docs/" "$TMP_DIR/"
