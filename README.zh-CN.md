@@ -4,7 +4,7 @@ Codex token 用量统计命令行工具。
 
 [English](README.md)
 
-用量主页：[GitHub Pages](https://crisxuan.github.io/codex-usage/) · [3 小时滚动看板](https://crisxuan.github.io/codex-usage/usage/hourly-latest.html) · [最新每周用量统计](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
+用量主页：[GitHub Pages](https://crisxuan.github.io/codex-usage/) · [滚动看板示例](https://crisxuan.github.io/codex-usage/usage/hourly-latest.html) · [最新每周用量统计](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
 
 ## 统计预览
 
@@ -211,12 +211,14 @@ codex-usage codex cost-chart --today --lang zh --output cost.html
 codex-usage codex summary --today --lang zh --no-charts
 ```
 
-3 小时滚动看板：
+滚动用量看板：
 
 ```bash
 codex-usage codex dashboard --since 3h --lang zh --history docs/usage/hourly-history.json --output docs/usage/hourly-latest.html
 scripts/publish_usage_dashboard.sh --publish
 ```
+
+看板周期是可配置的。这个仓库公开页面只是我自己的 3 小时示例；其他人可以通过 `--since`、`--interval-hours` 或 `CODEX_USAGE_INTERVAL_HOURS` 改成每日、每小时或任意自定义周期。
 
 看板会保存公开版聚合快照，并渲染成 GitHub Pages 静态页面；不会包含本机路径、完整 session 名或原始 Codex 日志。
 

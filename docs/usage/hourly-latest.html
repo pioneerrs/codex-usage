@@ -112,19 +112,19 @@
 <p class="crumb"><a href="../index.html">Codex Usage Estimator</a> / Usage Pulse</p>
 <header>
 <h1>Codex 用量脉搏</h1>
-<p class="subtitle">公开版滚动看板，来自本机 Codex token_count 日志的聚合结果。这里只发布汇总数值，不发布 session 路径或原始日志。</p>
-<p class="meta">生成时间: 2026-05-18T10:33:04+08:00</p>
+<p class="subtitle">公开版滚动看板，来自本机 Codex token_count 日志的聚合结果。监控周期可以自行配置；这个仓库公开的是 3 小时示例。</p>
+<p class="meta">生成时间: 2026-05-18T14:51:03+08:00</p>
 </header>
 <section class="metrics" aria-label="summary metrics">
 <div class="metric">
 <div class="label">Tokens</div>
-<div class="value">28,836,280</div>
-<div class="note">05-18 07:33 -&gt; 05-18 10:33</div>
+<div class="value">1,437,758</div>
+<div class="note">05-18 11:51 -&gt; 05-18 14:51</div>
 </div>
 <div class="metric">
 <div class="label">API 等价金额</div>
-<div class="value">$24.10</div>
-<div class="note">602.54</div>
+<div class="value">$2.84</div>
+<div class="note">71.05</div>
 </div>
 <div class="metric">
 <div class="label">Weekly 剩余</div>
@@ -133,13 +133,13 @@
 </div>
 <div class="metric">
 <div class="label">事件数</div>
-<div class="value">659</div>
-<div class="note">Sessions: 5</div>
+<div class="value">79</div>
+<div class="note">Sessions: 3</div>
 </div>
 </section>
 <section class="panel">
-<h2>3 小时走势</h2>
-<svg class="chart" viewBox="0 0 1060 360" role="img" aria-label="3 小时走势">
+<h2>滚动走势</h2>
+<svg class="chart" viewBox="0 0 1060 360" role="img" aria-label="滚动走势">
 <rect x="0" y="0" width="1060" height="360" fill="#ffffff"/>
 <line x1="72" y1="254.00" x2="982" y2="254.00" stroke="#e6e8ee"/>
 <text x="18" y="258.00" fill="#62656f" font-size="12">0</text>
@@ -151,9 +151,13 @@
 <text x="18" y="93.00" fill="#62656f" font-size="12">22M</text>
 <line x1="72" y1="34.00" x2="982" y2="34.00" stroke="#e6e8ee"/>
 <text x="18" y="38.00" fill="#62656f" font-size="12">29M</text>
-<rect x="515.00" y="34.00" width="24.00" height="220.00" rx="4" fill="#3772ff"/>
+<rect x="287.50" y="34.00" width="24.00" height="220.00" rx="4" fill="#3772ff"/>
 <text x="72.00" y="282" fill="#62656f" font-size="12">05-18 10:33</text>
-<circle cx="527.00" cy="45.00" r="4" fill="#0f9d58"/>
+<rect x="742.50" y="243.03" width="24.00" height="10.97" rx="4" fill="#3772ff"/>
+<text x="527.00" y="282" fill="#62656f" font-size="12">05-18 14:51</text>
+<polyline points="299.50,45.00 754.50,45.00" fill="none" stroke="#0f9d58" stroke-width="3"/>
+<circle cx="299.50" cy="45.00" r="4" fill="#0f9d58"/>
+<circle cx="754.50" cy="45.00" r="4" fill="#0f9d58"/>
 <text x="72" y="326" fill="#202124" font-size="13">■ Tokens</text>
 <text x="222" y="326" fill="#0f9d58" font-size="13">● Weekly 剩余</text>
 </svg>
@@ -162,26 +166,27 @@
 <h2>Token 构成</h2>
 <svg class="chart" viewBox="0 0 1060 170" role="img" aria-label="Token 构成">
 <rect x="0" y="0" width="1060" height="170" fill="#ffffff"/>
-<rect x="50.00" y="46" width="907.59" height="38" fill="#2563eb"/>
+<rect x="50.00" y="46" width="727.23" height="38" fill="#2563eb"/>
 <text x="60.00" y="70" fill="#ffffff" font-size="13" font-weight="700">Cached input</text>
-<rect x="957.59" y="46" width="48.95" height="38" fill="#0f766e"/>
-<rect x="1006.54" y="46" width="3.46" height="38" fill="#d9801f"/>
+<rect x="777.23" y="46" width="217.96" height="38" fill="#0f766e"/>
+<text x="787.23" y="70" fill="#ffffff" font-size="13" font-weight="700">非缓存 input</text>
+<rect x="995.19" y="46" width="14.81" height="38" fill="#d9801f"/>
 <rect x="50" y="116" width="12" height="12" rx="2" fill="#2563eb"/>
-<text x="68" y="127" fill="#202124" font-size="13">Cached input · 27,261,952</text>
+<text x="68" y="127" fill="#202124" font-size="13">Cached input · 1,089,152</text>
 <rect x="360" y="116" width="12" height="12" rx="2" fill="#0f766e"/>
-<text x="378" y="127" fill="#202124" font-size="13">非缓存 input · 1,470,371</text>
+<text x="378" y="127" fill="#202124" font-size="13">非缓存 input · 326,430</text>
 <rect x="670" y="116" width="12" height="12" rx="2" fill="#d9801f"/>
-<text x="688" y="127" fill="#202124" font-size="13">Output · 103,957</text>
-<text x="50" y="154" fill="#62656f" font-size="12">Reasoning: 40,312</text>
+<text x="688" y="127" fill="#202124" font-size="13">Output · 22,176</text>
+<text x="50" y="154" fill="#62656f" font-size="12">Reasoning: 10,418</text>
 </svg>
 </section>
 <section class="panel">
 <h2>限额</h2>
-<table><thead><tr><th>限额</th><th>已用</th><th>Weekly 剩余</th><th>重置</th></tr></thead><tbody><tr><td>primary</td><td>1%</td><td>99%</td><td>2026-05-18T15:29:40+08:00</td></tr><tr><td>secondary</td><td>5%</td><td>95%</td><td>2026-05-24T08:14:44+08:00</td></tr></tbody></table>
+<table><thead><tr><th>限额</th><th>已用</th><th>Weekly 剩余</th><th>重置</th></tr></thead><tbody><tr><td>primary</td><td>3%</td><td>97%</td><td>2026-05-18T15:29:56+08:00</td></tr><tr><td>secondary</td><td>5%</td><td>95%</td><td>2026-05-24T08:14:44+08:00</td></tr></tbody></table>
 </section>
 <section class="panel">
 <h2>快照记录</h2>
-<table><thead><tr><th>时间</th><th>窗口</th><th>Tokens</th><th>API 等价</th><th>剩余</th></tr></thead><tbody><tr><td>05-18 10:33</td><td>05-18 07:33 -&gt; 05-18 10:33</td><td>28,836,280</td><td>$24.10</td><td>95%</td></tr></tbody></table>
+<table><thead><tr><th>时间</th><th>窗口</th><th>Tokens</th><th>API 等价</th><th>剩余</th></tr></thead><tbody><tr><td>05-18 14:51</td><td>05-18 11:51 -&gt; 05-18 14:51</td><td>1,437,758</td><td>$2.84</td><td>95%</td></tr><tr><td>05-18 10:33</td><td>05-18 07:33 -&gt; 05-18 10:33</td><td>28,836,280</td><td>$24.10</td><td>95%</td></tr></tbody></table>
 </section>
 <p class="footnote">费用是 API 等价估算，不代表订阅真实账单。Reasoning token 已包含在 output token 中，不重复计费。</p>
 </main>

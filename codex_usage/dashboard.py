@@ -14,11 +14,11 @@ from .reporting import normalize_lang
 TEXT = {
     "en": {
         "title": "Codex Usage Pulse",
-        "subtitle": "Public rolling dashboard generated from local Codex token_count aggregates. It only publishes summary values, not session paths or raw logs.",
+        "subtitle": "Public rolling dashboard generated from local Codex token_count aggregates. Pick any cadence you want; this repository publishes a 3-hour example.",
         "generated": "Generated",
         "window": "Snapshot Window",
         "latest": "Latest Snapshot",
-        "history": "3-Hour History",
+        "history": "Rolling History",
         "snapshots": "Snapshots",
         "total_tokens": "Tokens",
         "api_cost": "API Equivalent",
@@ -47,11 +47,11 @@ TEXT = {
     },
     "zh": {
         "title": "Codex 用量脉搏",
-        "subtitle": "公开版滚动看板，来自本机 Codex token_count 日志的聚合结果。这里只发布汇总数值，不发布 session 路径或原始日志。",
+        "subtitle": "公开版滚动看板，来自本机 Codex token_count 日志的聚合结果。监控周期可以自行配置；这个仓库公开的是 3 小时示例。",
         "generated": "生成时间",
         "window": "快照窗口",
         "latest": "最新快照",
-        "history": "3 小时走势",
+        "history": "滚动走势",
         "snapshots": "快照记录",
         "total_tokens": "Tokens",
         "api_cost": "API 等价金额",
