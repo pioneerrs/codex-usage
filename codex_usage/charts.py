@@ -441,6 +441,14 @@ def _rate_svg(timeline: Sequence[Dict[str, Any]], text: Dict[str, str]) -> str:
                 f'<title>{escape(label)} {_format_percent_label(value)}</title>'
                 "</circle>"
             )
+        if points:
+            x, y, value = points[-1]
+            label_x = min(x + 8, left + chart_w - 52)
+            label_y = max(y - 8, top + 12)
+            parts.append(
+                f'<text x="{label_x:.2f}" y="{label_y:.2f}" fill="{color}" font-size="12" font-weight="700">'
+                f'{escape(label)} {_format_percent_label(value)}</text>'
+            )
 
     labels = _x_point_labels(buckets, left, bottom, chart_w, line_y=bottom + 24)
     legend = _legend([(text["primary"], COLORS["primary"]), (text["secondary"], COLORS["secondary"])])
