@@ -58,8 +58,8 @@ class ChartTests(unittest.TestCase):
         )
 
         self.assertIn("Rate Limits", html)
-        self.assertIn("primary 9%", html)
-        self.assertIn("secondary 11%", html)
+        self.assertIn("primary used 9%", html)
+        self.assertIn("secondary used 11%", html)
 
 
 if __name__ == "__main__":
