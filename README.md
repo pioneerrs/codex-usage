@@ -4,7 +4,7 @@ Local CLI for Codex token usage reports.
 
 [中文文档](README.zh-CN.md)
 
-Usage dashboard: [GitHub Pages](https://crisxuan.github.io/codex-usage/) · [rolling dashboard example](https://crisxuan.github.io/codex-usage/usage/hourly-latest.html) · [latest weekly report](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
+Usage dashboard: [GitHub Pages](https://crisxuan.github.io/codex-usage/) · [examples](https://crisxuan.github.io/codex-usage/usage/examples.html) · [rolling dashboard example](https://crisxuan.github.io/codex-usage/usage/hourly-latest.html) · [latest weekly report](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
 
 ## Preview
 
@@ -20,6 +20,15 @@ Usage dashboard: [GitHub Pages](https://crisxuan.github.io/codex-usage/) · [rol
 <p align="center">
   <sub>Preview images use anonymized example data. Real reports come from local Codex <code>token_count</code> logs.</sub>
 </p>
+
+## What You Can See Quickly
+
+- **Trend:** when token usage starts climbing.
+- **Mix:** whether cached input, fresh input, or output is the main driver.
+- **Limits:** current primary/weekly remaining percentages and reset windows.
+- **Hot sessions:** which long task is eating most of the context.
+
+See the public [usage examples](https://crisxuan.github.io/codex-usage/usage/examples.html) for anonymized charts and reading notes.
 
 ## Community
 

@@ -4,7 +4,7 @@ Codex token 用量统计命令行工具。
 
 [English](README.md)
 
-用量主页：[GitHub Pages](https://crisxuan.github.io/codex-usage/) · [滚动看板示例](https://crisxuan.github.io/codex-usage/usage/hourly-latest.html) · [最新每周用量统计](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
+用量主页：[GitHub Pages](https://crisxuan.github.io/codex-usage/) · [用量案例](https://crisxuan.github.io/codex-usage/usage/examples.html) · [滚动看板示例](https://crisxuan.github.io/codex-usage/usage/hourly-latest.html) · [最新每周用量统计](https://crisxuan.github.io/codex-usage/usage/weekly-latest.html)
 
 ## 统计预览
 
@@ -20,6 +20,15 @@ Codex token 用量统计命令行工具。
 <p align="center">
   <sub>图中是匿名示例数据。实际报告由本机 Codex <code>token_count</code> 日志生成。</sub>
 </p>
+
+## 一眼能看什么
+
+- **趋势：** 哪个时间段 token 开始明显变大。
+- **构成：** cached input、fresh input、output 谁是主要来源。
+- **限额：** 当前 primary / weekly 剩余百分比和 reset 窗口。
+- **长任务：** 哪个 session 正在吃掉大部分上下文。
+
+可以打开公开的 [用量案例](https://crisxuan.github.io/codex-usage/usage/examples.html)，看匿名图表和读图说明。
 
 ## 交流群
 
