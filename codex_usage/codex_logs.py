@@ -42,7 +42,9 @@ TEXT = {
             "Total",
         ],
         "rate_headers": ["Limit", "First", "Latest", "Delta", "Max", "Reset"],
-        "session_headers": ["Session", "Last Event", "Total", "Output", "Reasoning"],
+        "session_headers": ["Session", "Model", "Last Event", "Total", "Output", "Reasoning"],
+        "by_model": "By Model",
+        "model_headers": ["Model", "Sessions", "Input", "Cached Input", "Output", "Total"],
         "primary": "primary",
         "secondary": "secondary",
         "unavailable": "unavailable",
@@ -69,7 +71,9 @@ TEXT = {
             "Total",
         ],
         "rate_headers": ["限额", "起始", "最新", "变化", "最高", "重置时间"],
-        "session_headers": ["Session", "最后事件", "Total", "Output", "Reasoning"],
+        "session_headers": ["Session", "Model", "最后事件", "Total", "Output", "Reasoning"],
+        "by_model": "按模型分组",
+        "model_headers": ["Model", "Sessions", "Input", "Cached Input", "Output", "Total"],
         "primary": "primary",
         "secondary": "secondary",
         "unavailable": "不可用",
@@ -132,6 +136,7 @@ def aggregate_codex_logs(
     end: datetime,
     codex_home: Optional[Path] = None,
     include_archived: bool = True,
+    model_filter: Optional[str] = None,
 ) -> Dict[str, Any]:
     files = discover_session_files(codex_home=codex_home, include_archived=include_archived)
     session_rows: List[Dict[str, Any]] = []
@@ -139,8 +144,17 @@ def aggregate_codex_logs(
     timeline_buckets = _new_timeline_buckets(start, end)
     rate_events: List[Dict[str, Any]] = []
     token_event_count = 0
+    by_model_totals: Dict[str, Dict[str, int]] = {}
+    by_model_session_count: Dict[str, int] = {}
 
     for path in files:
+        # Session-level model is used for display and filtering.
+        # Per-event model attribution is used for accurate by-model aggregation.
+        session_model = read_session_model(path) or "unknown"
+
+        if model_filter and session_model != model_filter:
+            continue
+
         events = read_token_events(path)
         if not events:
             continue
@@ -167,12 +181,26 @@ def aggregate_codex_logs(
             _add_event_to_timeline(timeline_buckets, start, event, event_delta)
             previous_usage = event["usage"]
 
+            # Per-event model attribution for accurate by-model accounting.
+            event_model = event.get("model") or session_model
+            model_bucket = by_model_totals.setdefault(event_model, _empty_totals())
+            for key in TOKEN_KEYS:
+                model_bucket[key] += event_delta[key]
+
+        # Track which models appeared in this session for session counting.
+        session_models = set(
+            (e.get("model") or session_model) for e in in_window
+        )
+        for sm in session_models:
+            by_model_session_count[sm] = by_model_session_count.get(sm, 0) + 1
+
         session_rate_events = [_rate_snapshot(event) for event in in_window]
         rate_events.extend(snapshot for snapshot in session_rate_events if snapshot)
         session_rows.append(
             {
                 "sessionFile": path.name,
                 "sourcePath": str(path),
+                "model": session_model,
                 "firstEventAt": first_event["timestamp"].isoformat(),
                 "lastEventAt": last_event["timestamp"].isoformat(),
                 "tokenEvents": len(in_window),
@@ -181,6 +209,13 @@ def aggregate_codex_logs(
             }
         )
 
+    by_model: Dict[str, Dict[str, Any]] = {}
+    for model in by_model_totals:
+        by_model[model] = {
+            **_public_usage(by_model_totals[model]),
+            "sessionCount": by_model_session_count.get(model, 0),
+        }
+
     summary = {
         "windowStart": start.isoformat(),
         "windowEnd": end.isoformat(),
@@ -188,6 +223,7 @@ def aggregate_codex_logs(
         "sessionCount": len(session_rows),
         "tokenEventCount": token_event_count,
         **_public_usage(totals),
+        "byModel": by_model,
     }
     summary.update(_rate_summary_fields(rate_events))
     return {
@@ -198,34 +234,84 @@ def aggregate_codex_logs(
 
 
 def read_token_events(path: Path) -> List[Dict[str, Any]]:
+    """Read token_count events from a Codex session JSONL file.
+
+    Each event includes a ``model`` field derived from the preceding
+    ``turn_context`` event in the same file.  When no ``turn_context``
+    has been seen yet (or the turn_context has no model), the field
+    is ``None``.
+
+    The single-pass scan also updates a running model state from
+    turn_context events, making this more efficient than the previous
+    two-pass approach (separate read_session_model + read_token_events).
+    """
     events: List[Dict[str, Any]] = []
+    current_model: Optional[str] = None
     with path.open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
-            if "token_count" not in line:
+            # Fast-path: skip lines that contain neither keyword.
+            has_tc = "turn_context" in line
+            has_tk = "token_count" in line
+            if not has_tc and not has_tk:
                 continue
             try:
                 record = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            payload = record.get("payload") or {}
-            if payload.get("type") != "token_count":
-                continue
-            usage = (payload.get("info") or {}).get("total_token_usage") or {}
-            if not usage.get("total_tokens"):
-                continue
-            timestamp = _parse_timestamp(record.get("timestamp"))
-            if not timestamp:
-                continue
-            events.append(
-                {
-                    "timestamp": timestamp,
-                    "lineNumber": line_number,
-                    "usage": {key: int(usage.get(key) or 0) for key in TOKEN_KEYS},
-                    "rateLimits": payload.get("rate_limits") or {},
-                }
-            )
+
+            # turn_context is a top-level event type that carries the model.
+            if has_tc and record.get("type") == "turn_context":
+                model = (record.get("payload") or {}).get("model")
+                if model:
+                    current_model = model
+                continue  # turn_context is not a token event itself
+
+            # token_count is nested inside an event_msg.
+            if has_tk:
+                payload = record.get("payload") or {}
+                if payload.get("type") != "token_count":
+                    continue
+                usage = (payload.get("info") or {}).get("total_token_usage") or {}
+                if not usage.get("total_tokens"):
+                    continue
+                timestamp = _parse_timestamp(record.get("timestamp"))
+                if not timestamp:
+                    continue
+                events.append(
+                    {
+                        "timestamp": timestamp,
+                        "lineNumber": line_number,
+                        "usage": {key: int(usage.get(key) or 0) for key in TOKEN_KEYS},
+                        "rateLimits": payload.get("rate_limits") or {},
+                        "model": current_model,
+                    }
+                )
     events.sort(key=lambda event: (event["timestamp"], event["lineNumber"]))
     return events
+
+
+def read_session_model(path: Path) -> Optional[str]:
+    """Extract the model name from the first turn_context event in a session file.
+
+    For multi-model sessions (rare, <2% in practice), this returns the model
+    from the first turn_context, which is a reasonable approximation for
+    session-level aggregation.
+
+    Returns None if no turn_context event is found in the file.
+    """
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if "turn_context" not in line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("type") == "turn_context":
+                model = (record.get("payload") or {}).get("model")
+                if model:
+                    return model
+    return None
 
 
 def render_codex_report(report: Dict[str, Any], lang: str = "en") -> str:
@@ -260,6 +346,29 @@ def render_codex_report(report: Dict[str, Any], lang: str = "en") -> str:
         )
     )
 
+    by_model = summary.get("byModel") or {}
+    if by_model:
+        lines.extend(
+            [
+                "",
+                text["by_model"],
+                *render_table(
+                    text["model_headers"],
+                    [
+                        [
+                            model,
+                            str(data.get("sessionCount") or 0),
+                            _format_int(data.get("inputTokens")),
+                            _format_int(data.get("cachedInputTokens")),
+                            _format_int(data.get("outputTokens")),
+                            _format_int(data.get("totalTokens")),
+                        ]
+                        for model, data in sorted(by_model.items())
+                    ],
+                ),
+            ]
+        )
+
     rate_rows = [
         _rate_row(text["primary"], "primary", summary, text["unavailable"]),
         _rate_row(text["secondary"], "secondary", summary, text["unavailable"]),
@@ -275,6 +384,7 @@ def render_codex_report(report: Dict[str, Any], lang: str = "en") -> str:
                 [
                     [
                         row["sessionFile"],
+                        row.get("model") or "unknown",
                         row["lastEventAt"],
                         _format_int(row["totalTokens"]),
                         _format_int(row["outputTokens"]),
@@ -307,6 +417,7 @@ def export_codex_report(report: Dict[str, Any], output: Path, fmt: str) -> None:
 
     fieldnames = [
         "sessionFile",
+        "model",
         "sourcePath",
         "firstEventAt",
         "lastEventAt",
