@@ -4,7 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codex_usage.codex_logs import read_token_events, aggregate_codex_logs
+from codex_usage.codex_logs import aggregate_codex_logs, read_token_events, render_codex_report
+from codex_usage.charts import render_codex_chart_html
 from datetime import datetime
 
 
@@ -208,6 +209,147 @@ class AggregatePerModelTests(unittest.TestCase):
 
         self.assertEqual(len(report["sessions"]), 1)
         self.assertEqual(report["sessions"][0]["model"], "gpt-5.5")
+
+    def test_counter_reset_uses_one_delta_stream_everywhere(self):
+        self._write_session("reset.jsonl", [
+            turn_context_event("2026-05-10T10:00:00+08:00", "gpt-5.5", "turn-1"),
+            token_count_event("2026-05-10T10:00:05+08:00", 90, 40, 10, 2, 100),
+            token_count_event("2026-05-10T10:01:05+08:00", 8, 3, 2, 1, 10),
+            turn_context_event("2026-05-10T10:02:00+08:00", "gpt-5.4-mini", "turn-2"),
+            token_count_event("2026-05-10T10:02:05+08:00", 24, 8, 6, 2, 30),
+        ])
+
+        start = datetime(2026, 5, 10).astimezone()
+        end = datetime(2026, 5, 10, 23, 59, 59).astimezone()
+        report = aggregate_codex_logs(start, end, codex_home=self.codex_home)
+
+        summary = report["summary"]
+        session_total = sum(row["totalTokens"] for row in report["sessions"])
+        timeline_total = sum(row["totalTokens"] for row in report["timeline"])
+        model_total = sum(row["totalTokens"] for row in summary["byModel"].values())
+        self.assertEqual(summary["totalTokens"], 130)
+        self.assertEqual({summary["totalTokens"], session_total, timeline_total, model_total}, {130})
+        self.assertEqual(summary["counterResetCount"], 1)
+
+    def test_model_filter_applies_to_event_deltas(self):
+        self._write_session("multi-filter.jsonl", [
+            turn_context_event("2026-05-10T10:00:00+08:00", "gpt-5.5", "turn-1"),
+            token_count_event("2026-05-10T10:00:05+08:00", 90, 40, 10, 2, 100),
+            turn_context_event("2026-05-10T10:05:00+08:00", "gpt-5.4-mini", "turn-2"),
+            token_count_event("2026-05-10T10:05:05+08:00", 135, 60, 15, 3, 150),
+        ])
+
+        start = datetime(2026, 5, 10).astimezone()
+        end = datetime(2026, 5, 10, 23, 59, 59).astimezone()
+        first = aggregate_codex_logs(start, end, codex_home=self.codex_home, model_filter="gpt-5.5")
+        second = aggregate_codex_logs(start, end, codex_home=self.codex_home, model_filter="gpt-5.4-mini")
+
+        self.assertEqual(first["summary"]["totalTokens"], 100)
+        self.assertEqual(set(first["summary"]["byModel"]), {"gpt-5.5"})
+        self.assertEqual(second["summary"]["totalTokens"], 50)
+        self.assertEqual(set(second["summary"]["byModel"]), {"gpt-5.4-mini"})
+
+    def test_component_regression_is_clamped_and_audited(self):
+        self._write_session("component-regression.jsonl", [
+            turn_context_event("2026-05-10T10:00:00+08:00", "gpt-5.5"),
+            token_count_event("2026-05-10T10:00:05+08:00", 90, 40, 10, 2, 100),
+            token_count_event("2026-05-10T10:01:05+08:00", 80, 30, 40, 5, 120),
+        ])
+        start = datetime(2026, 5, 10).astimezone()
+        end = datetime(2026, 5, 10, 23, 59, 59).astimezone()
+
+        summary = aggregate_codex_logs(start, end, codex_home=self.codex_home)["summary"]
+
+        self.assertEqual(summary["inputTokens"], 90)
+        self.assertEqual(summary["totalTokens"], 120)
+        self.assertEqual(summary["counterAnomalyCount"], 1)
+
+    def test_duplicate_snapshot_counts_event_but_adds_zero_delta(self):
+        event = token_count_event("2026-05-10T10:00:05+08:00", 90, 40, 10, 2, 100)
+        duplicate = dict(event, timestamp="2026-05-10T10:01:05+08:00")
+        self._write_session("duplicate.jsonl", [
+            turn_context_event("2026-05-10T10:00:00+08:00", "gpt-5.5"),
+            event,
+            duplicate,
+        ])
+        start = datetime(2026, 5, 10).astimezone()
+        end = datetime(2026, 5, 10, 23, 59, 59).astimezone()
+
+        summary = aggregate_codex_logs(start, end, codex_home=self.codex_home)["summary"]
+
+        self.assertEqual(summary["totalTokens"], 100)
+        self.assertEqual(summary["tokenEventCount"], 2)
+
+    def test_zero_total_snapshot_is_a_valid_counter_reset(self):
+        self._write_session("zero-reset.jsonl", [
+            turn_context_event("2026-05-10T10:00:00+08:00", "gpt-5.5"),
+            token_count_event("2026-05-10T10:00:05+08:00", 90, 40, 10, 2, 100),
+            token_count_event("2026-05-10T10:01:05+08:00", 0, 0, 0, 0, 0),
+            token_count_event("2026-05-10T10:02:05+08:00", 8, 3, 2, 1, 10),
+        ])
+        start = datetime(2026, 5, 10).astimezone()
+        end = datetime(2026, 5, 10, 23, 59, 59).astimezone()
+
+        summary = aggregate_codex_logs(start, end, codex_home=self.codex_home)["summary"]
+
+        self.assertEqual(summary["totalTokens"], 110)
+        self.assertEqual(summary["tokenEventCount"], 3)
+        self.assertEqual(summary["counterResetCount"], 1)
+
+    def test_line_order_wins_over_out_of_order_timestamps(self):
+        self._write_session("out-of-order.jsonl", [
+            turn_context_event("2026-05-10T10:00:00+08:00", "gpt-5.5"),
+            token_count_event("2026-05-10T10:05:05+08:00", 90, 40, 10, 2, 100),
+            token_count_event("2026-05-10T10:01:05+08:00", 135, 60, 15, 3, 150),
+        ])
+        start = datetime(2026, 5, 10).astimezone()
+        end = datetime(2026, 5, 10, 23, 59, 59).astimezone()
+
+        report = aggregate_codex_logs(start, end, codex_home=self.codex_home)
+
+        self.assertEqual(report["summary"]["totalTokens"], 150)
+        self.assertEqual(sum(row["totalTokens"] for row in report["timeline"]), 150)
+
+    def test_zero_rate_limit_snapshot_is_preserved_as_reset(self):
+        self._write_session("rate-reset.jsonl", [
+            turn_context_event("2026-05-10T10:00:00+08:00", "gpt-5.5"),
+            token_count_event("2026-05-10T10:00:05+08:00", 90, 40, 10, 2, 100, primary=90),
+            token_count_event("2026-05-10T10:01:05+08:00", 90, 40, 10, 2, 100, primary=0),
+        ])
+        start = datetime(2026, 5, 10).astimezone()
+        end = datetime(2026, 5, 10, 23, 59, 59).astimezone()
+
+        summary = aggregate_codex_logs(start, end, codex_home=self.codex_home)["summary"]
+
+        self.assertEqual(summary["primaryUsedPercentLatest"], 0)
+        self.assertEqual(summary["primaryUsedPercentDelta"], -90)
+
+    def test_damaged_and_invalid_lines_are_counted_without_leaking_content(self):
+        path = self.session_dir / "damaged.jsonl"
+        valid = token_count_event("2026-05-10T10:00:05+08:00", 90, 40, 10, 2, 100)
+        invalid_usage = token_count_event("2026-05-10T10:01:05+08:00", 90, 40, 10, 2, "not-a-number")
+        invalid_time = token_count_event("not-a-time", 100, 40, 10, 2, 110)
+        payload = (
+            json.dumps(turn_context_event("2026-05-10T10:00:00+08:00", "gpt-5.5")).encode()
+            + b"\n{\"private-marker\":\xff}\n"
+            + b'{"type":"event_msg","payload":{"type":"token_count"}\n'
+            + json.dumps(invalid_usage).encode() + b"\n"
+            + json.dumps(invalid_time).encode() + b"\n"
+            + json.dumps(valid).encode() + b"\n"
+        )
+        path.write_bytes(payload)
+        start = datetime(2026, 5, 10).astimezone()
+        end = datetime(2026, 5, 10, 23, 59, 59).astimezone()
+
+        report = aggregate_codex_logs(start, end, codex_home=self.codex_home)
+        rendered = render_codex_report(report, lang="en")
+        chart = render_codex_chart_html(report, lang="en")
+
+        self.assertEqual(report["summary"]["damagedLineCount"], 2)
+        self.assertEqual(report["summary"]["invalidTokenEventCount"], 2)
+        self.assertNotIn("private-marker", rendered)
+        self.assertIn("Data Quality Warning", chart)
+        self.assertNotIn("private-marker", chart)
 
 
 if __name__ == "__main__":

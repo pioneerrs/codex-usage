@@ -3,13 +3,17 @@ from __future__ import annotations
 import csv
 import json
 import os
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from tzlocal import get_localzone
 
 from .errors import UsageError
 from .reporting import normalize_lang, render_table
 
+
+LOCAL_TIMEZONE = get_localzone()
 
 TOKEN_KEYS = (
     "input_tokens",
@@ -101,23 +105,25 @@ def resolve_time_window(
     since: Optional[str] = None,
     from_value: Optional[str] = None,
     to_value: Optional[str] = None,
+    tz: Optional[tzinfo] = None,
 ) -> Tuple[datetime, datetime]:
-    now = datetime.now().astimezone()
+    local_tz = tz or LOCAL_TIMEZONE
+    now = datetime.now(local_tz)
     if (today or date_value) and (from_value or to_value):
         raise UsageError("Use either --today/--date or --from/--to, not both.")
     if date_value:
         parsed = _parse_date(date_value)
-        return _day_bounds(parsed)
+        return _day_bounds(parsed, tz=local_tz)
     if today or not any([since, from_value, to_value]):
-        return _day_bounds(now.date(), end=now)
+        return _day_bounds(now.date(), end=now, tz=local_tz)
 
-    start = _parse_datetime_filter(from_value, end_of_day=False) if from_value else None
-    end = _parse_datetime_filter(to_value, end_of_day=True) if to_value else now
+    start = _parse_datetime_filter(from_value, end_of_day=False, tz=local_tz) if from_value else None
+    end = _parse_datetime_filter(to_value, end_of_day=True, tz=local_tz) if to_value else now
     if since:
         since_start = now - _parse_since_delta(since)
         start = max(start, since_start) if start else since_start
     if not start:
-        start = datetime.min.replace(tzinfo=now.tzinfo)
+        start = datetime.min.replace(tzinfo=local_tz)
     if start > end:
         raise UsageError("The Codex log report start time is after the end time.")
     return start, end
@@ -155,39 +161,64 @@ def aggregate_codex_logs(
         for path, metadata in metadata_by_path.items()
         if metadata.get("sessionId")
     }
-    events_by_path: Dict[Path, List[Dict[str, Any]]] = {}
+    referenced_parent_ids = {
+        metadata.get("forkedFromId")
+        for metadata in metadata_by_path.values()
+        if metadata.get("forkedFromId")
+    }
+    cached_parent_paths = {
+        path_by_session_id[session_id]
+        for session_id in referenced_parent_ids
+        if session_id in path_by_session_id
+    }
+    parsed_by_path: Dict[Path, Dict[str, Any]] = {}
+
+    def parsed_log(path: Path) -> Dict[str, Any]:
+        cached = parsed_by_path.get(path)
+        if cached is not None:
+            return cached
+        parsed = _read_session_log(path)
+        if path in cached_parent_paths:
+            parsed_by_path[path] = parsed
+        return parsed
 
     def cached_events(path: Path) -> List[Dict[str, Any]]:
-        if path not in events_by_path:
-            events_by_path[path] = read_token_events(path)
-        return events_by_path[path]
+        return parsed_log(path)["events"]
 
     session_rows: List[Dict[str, Any]] = []
     totals = _empty_totals()
+    verified_totals = _empty_totals()
     timeline_buckets = _new_timeline_buckets(start, end)
     rate_events: List[Dict[str, Any]] = []
     token_event_count = 0
     by_model_totals: Dict[str, Dict[str, int]] = {}
+    verified_by_model_totals: Dict[str, Dict[str, int]] = {}
     by_model_session_count: Dict[str, int] = {}
+    by_model_audit: Dict[str, Dict[str, int]] = {}
     fork_session_count = 0
     resolved_fork_count = 0
     unresolved_fork_count = 0
+    ambiguous_fork_count = 0
+    not_replayed_fork_count = 0
     fork_replay_tokens_excluded = 0
+    counter_reset_count = 0
+    counter_anomaly_count = 0
+    damaged_line_count = 0
+    invalid_token_event_count = 0
 
     for path in files:
-        # Session-level model is used for display and filtering.
-        # Per-event model attribution is used for accurate by-model aggregation.
-        session_model = read_session_model(path) or "unknown"
-
-        if model_filter and session_model != model_filter:
+        metadata = metadata_by_path[path]
+        forked_from_id = metadata.get("forkedFromId")
+        created_at = metadata.get("createdAt")
+        if forked_from_id and created_at is not None and created_at > end:
             continue
 
-        events = cached_events(path)
+        parsed = parsed_log(path)
+        session_model = parsed["firstModel"] or "unknown"
+        events = parsed["events"]
         if not events:
             continue
 
-        metadata = metadata_by_path[path]
-        forked_from_id = metadata.get("forkedFromId")
         fork_baseline_status: Optional[str] = None
         inherited_usage: Optional[Dict[str, int]] = None
         effective_events = events
@@ -199,38 +230,86 @@ def aggregate_codex_logs(
                 cached_events,
             )
 
-        raw_before: Optional[Dict[str, Any]] = None
-        raw_in_window: List[Dict[str, Any]] = []
-        for event in events:
-            if event["timestamp"] < start:
-                raw_before = event
-            elif start <= event["timestamp"] <= end:
-                raw_in_window.append(event)
+        eligible_events = _eligible_child_events(events, metadata) if forked_from_id else events
+        if forked_from_id:
+            eligible_lines = {event["lineNumber"] for event in eligible_events}
+            effective_events = [
+                event for event in effective_events if event["lineNumber"] in eligible_lines
+            ]
+        raw_in_window = [
+            event for event in eligible_events if start <= event["timestamp"] <= end
+        ]
 
-        before: Optional[Dict[str, Any]] = None
-        in_window: List[Dict[str, Any]] = []
-        for event in effective_events:
-            if event["timestamp"] < start:
-                before = event
-            elif start <= event["timestamp"] <= end:
-                in_window.append(event)
-
-        base_usage = (
-            before["usage"]
-            if before
-            else inherited_usage
+        initial_base = (
+            inherited_usage
             if fork_baseline_status == "resolved" and inherited_usage
             else _empty_totals()
         )
-        corrected_delta = _usage_delta(base_usage, in_window[-1]["usage"]) if in_window else _empty_totals()
-        raw_base_usage = raw_before["usage"] if raw_before else _empty_totals()
-        raw_delta = _usage_delta(raw_base_usage, raw_in_window[-1]["usage"]) if raw_in_window else _empty_totals()
-        replay_excluded = max(raw_delta["total_tokens"] - corrected_delta["total_tokens"], 0)
+        inclusive_rows, inclusive_delta, session_resets, session_anomalies = _event_deltas_for_window(
+            effective_events,
+            start,
+            end,
+            initial_base,
+        )
+        verified_base = initial_base
+        if fork_baseline_status == "ambiguous" and inherited_usage:
+            verified_base = inherited_usage
+        elif fork_baseline_status == "unresolved" and effective_events:
+            verified_base = min(effective_events, key=lambda item: item["lineNumber"])["usage"]
+        verified_rows, verified_delta, _, _ = _event_deltas_for_window(
+            effective_events,
+            start,
+            end,
+            verified_base,
+        )
+        if model_filter:
+            inclusive_rows = [
+                row
+                for row in inclusive_rows
+                if (row["event"].get("model") or session_model) == model_filter
+            ]
+            verified_rows = [
+                row
+                for row in verified_rows
+                if (row["event"].get("model") or session_model) == model_filter
+            ]
+            inclusive_delta = _sum_delta_rows(inclusive_rows)
+            verified_delta = _sum_delta_rows(verified_rows)
+            session_resets = sum(int(row["reset"]) for row in inclusive_rows)
+            session_anomalies = sum(int(row["anomaly"]) for row in inclusive_rows)
+        unverified_delta = _usage_difference(inclusive_delta, verified_delta)
+        raw_delta_rows, raw_delta, _, _ = _event_deltas_for_window(
+            events, start, end, _empty_totals()
+        )
+        corrected_all_rows, unfiltered_inclusive_delta, _, _ = _event_deltas_for_window(
+            effective_events, start, end, initial_base
+        )
+        if model_filter:
+            raw_delta = _sum_delta_rows(
+                [
+                    row
+                    for row in raw_delta_rows
+                    if (row["event"].get("model") or session_model) == model_filter
+                ]
+            )
+            unfiltered_inclusive_delta = _sum_delta_rows(
+                [
+                    row
+                    for row in corrected_all_rows
+                    if (row["event"].get("model") or session_model) == model_filter
+                ]
+            )
+        replay_excluded = max(
+            raw_delta["total_tokens"] - unfiltered_inclusive_delta["total_tokens"], 0
+        )
 
-        created_at = metadata.get("createdAt")
         fork_is_relevant = bool(
             forked_from_id
-            and raw_in_window
+            and any(
+                not model_filter
+                or (event.get("model") or session_model) == model_filter
+                for event in raw_in_window
+            )
             and (created_at is None or created_at <= end)
         )
         if fork_is_relevant:
@@ -238,29 +317,58 @@ def aggregate_codex_logs(
             fork_replay_tokens_excluded += replay_excluded
             if fork_baseline_status == "resolved":
                 resolved_fork_count += 1
+            elif fork_baseline_status == "ambiguous":
+                ambiguous_fork_count += 1
+            elif fork_baseline_status == "not_replayed":
+                not_replayed_fork_count += 1
             elif fork_baseline_status == "unresolved":
                 unresolved_fork_count += 1
 
-        if not in_window:
+        if inclusive_rows or fork_is_relevant:
+            damaged_line_count += parsed["damagedLineCount"]
+            invalid_token_event_count += parsed["invalidTokenEventCount"]
+
+        if not inclusive_rows:
             continue
 
-        first_event = in_window[0]
-        last_event = in_window[-1]
-        delta = corrected_delta
-        previous_usage = base_usage
+        in_window = [row["event"] for row in inclusive_rows]
+        first_event = min(in_window, key=lambda event: (event["timestamp"], event["lineNumber"]))
+        last_event = max(in_window, key=lambda event: (event["timestamp"], event["lineNumber"]))
+        delta = inclusive_delta
         token_event_count += len(in_window)
+        counter_reset_count += session_resets
+        counter_anomaly_count += session_anomalies
         for key in TOKEN_KEYS:
             totals[key] += delta[key]
-        for event in in_window:
-            event_delta = _usage_delta(previous_usage, event["usage"])
-            _add_event_to_timeline(timeline_buckets, start, event, event_delta)
-            previous_usage = event["usage"]
+            verified_totals[key] += verified_delta[key]
+        verified_by_line = {
+            row["event"]["lineNumber"]: row["delta"] for row in verified_rows
+        }
+        for row in inclusive_rows:
+            event = row["event"]
+            event_delta = row["delta"]
+            event_verified_delta = verified_by_line.get(event["lineNumber"], _empty_totals())
+            _add_event_to_timeline(
+                timeline_buckets,
+                event,
+                event_delta,
+                event_verified_delta,
+                int(row["reset"]),
+                int(row["anomaly"]),
+            )
 
             # Per-event model attribution for accurate by-model accounting.
             event_model = event.get("model") or session_model
             model_bucket = by_model_totals.setdefault(event_model, _empty_totals())
+            verified_model_bucket = verified_by_model_totals.setdefault(
+                event_model, _empty_totals()
+            )
+            model_audit = by_model_audit.setdefault(event_model, _empty_audit())
             for key in TOKEN_KEYS:
                 model_bucket[key] += event_delta[key]
+                verified_model_bucket[key] += event_verified_delta[key]
+            model_audit["counterResetCount"] += int(row["reset"])
+            model_audit["counterAnomalyCount"] += int(row["anomaly"])
 
         # Track which models appeared in this session for session counting.
         session_models = set(
@@ -268,6 +376,19 @@ def aggregate_codex_logs(
         )
         for sm in session_models:
             by_model_session_count[sm] = by_model_session_count.get(sm, 0) + 1
+        audit_model = session_model if session_model in session_models else sorted(session_models)[0]
+        audit = by_model_audit.setdefault(audit_model, _empty_audit())
+        audit["damagedLineCount"] += parsed["damagedLineCount"]
+        audit["invalidTokenEventCount"] += parsed["invalidTokenEventCount"]
+        if fork_baseline_status:
+            audit[_fork_status_count_key(fork_baseline_status)] += 1
+        _add_session_audit_to_timeline(
+            timeline_buckets,
+            first_event,
+            parsed["damagedLineCount"],
+            parsed["invalidTokenEventCount"],
+            fork_baseline_status,
+        )
 
         session_rate_events = [_rate_snapshot(event) for event in in_window]
         rate_events.extend(snapshot for snapshot in session_rate_events if snapshot)
@@ -282,18 +403,45 @@ def aggregate_codex_logs(
                 "forkedFromId": forked_from_id,
                 "forkBaselineStatus": fork_baseline_status,
                 "forkReplayTokensExcluded": replay_excluded,
+                "forkSessionCount": int(bool(forked_from_id)),
+                "resolvedForkCount": int(fork_baseline_status == "resolved"),
+                "unresolvedForkCount": int(fork_baseline_status == "unresolved"),
+                "ambiguousForkCount": int(fork_baseline_status == "ambiguous"),
+                "notReplayedForkCount": int(fork_baseline_status == "not_replayed"),
+                "counterResetCount": session_resets,
+                "counterAnomalyCount": session_anomalies,
+                "damagedLineCount": parsed["damagedLineCount"],
+                "invalidTokenEventCount": parsed["invalidTokenEventCount"],
                 **_public_usage(delta),
+                "verifiedUsage": _public_usage(verified_delta),
+                "unverifiedUsage": _public_usage(unverified_delta),
+                "usageConfidence": (
+                    "verified" if unverified_delta["total_tokens"] == 0 else "unverified"
+                ),
                 **_rate_summary_fields(session_rate_events),
             }
         )
 
     by_model: Dict[str, Dict[str, Any]] = {}
     for model in by_model_totals:
+        model_verified = verified_by_model_totals.get(model, _empty_totals())
+        model_audit = by_model_audit.get(model, _empty_audit())
         by_model[model] = {
             **_public_usage(by_model_totals[model]),
+            "verifiedUsage": _public_usage(model_verified),
+            "unverifiedUsage": _public_usage(
+                _usage_difference(by_model_totals[model], model_verified)
+            ),
             "sessionCount": by_model_session_count.get(model, 0),
+            "usageConfidence": (
+                "verified"
+                if by_model_totals[model]["total_tokens"] == model_verified["total_tokens"]
+                else "unverified"
+            ),
+            **model_audit,
         }
 
+    unverified_totals = _usage_difference(totals, verified_totals)
     summary = {
         "windowStart": start.isoformat(),
         "windowEnd": end.isoformat(),
@@ -303,8 +451,19 @@ def aggregate_codex_logs(
         "forkSessionCount": fork_session_count,
         "resolvedForkCount": resolved_fork_count,
         "unresolvedForkCount": unresolved_fork_count,
+        "ambiguousForkCount": ambiguous_fork_count,
+        "notReplayedForkCount": not_replayed_fork_count,
         "forkReplayTokensExcluded": fork_replay_tokens_excluded,
+        "counterResetCount": counter_reset_count,
+        "counterAnomalyCount": counter_anomaly_count,
+        "damagedLineCount": damaged_line_count,
+        "invalidTokenEventCount": invalid_token_event_count,
         **_public_usage(totals),
+        "verifiedUsage": _public_usage(verified_totals),
+        "unverifiedUsage": _public_usage(unverified_totals),
+        "usageConfidence": (
+            "verified" if unverified_totals["total_tokens"] == 0 else "unverified"
+        ),
         "byModel": by_model,
     }
     summary.update(_rate_summary_fields(rate_events))
@@ -327,11 +486,20 @@ def read_token_events(path: Path) -> List[Dict[str, Any]]:
     turn_context events, making this more efficient than the previous
     two-pass approach (separate read_session_model + read_token_events).
     """
+    return _read_session_log(path)["events"]
+
+
+def _read_session_log(path: Path) -> Dict[str, Any]:
     events: List[Dict[str, Any]] = []
     current_model: Optional[str] = None
-    with path.open("r", encoding="utf-8") as handle:
+    first_model: Optional[str] = None
+    damaged_line_count = 0
+    invalid_token_event_count = 0
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
         for line_number, line in enumerate(handle, start=1):
-            # Fast-path: skip lines that contain neither keyword.
+            replacement_seen = "\ufffd" in line
+            if replacement_seen:
+                damaged_line_count += 1
             has_tc = "turn_context" in line
             has_tk = "token_count" in line
             if not has_tc and not has_tk:
@@ -339,43 +507,69 @@ def read_token_events(path: Path) -> List[Dict[str, Any]]:
             try:
                 record = json.loads(line)
             except json.JSONDecodeError:
+                if not replacement_seen:
+                    damaged_line_count += 1
                 continue
 
-            # turn_context is a top-level event type that carries the model.
             if has_tc and record.get("type") == "turn_context":
                 model = (record.get("payload") or {}).get("model")
                 if model:
                     current_model = model
-                continue  # turn_context is not a token event itself
+                    if first_model is None:
+                        first_model = model
+                continue
 
-            # token_count is nested inside an event_msg.
             if has_tk:
                 payload = record.get("payload") or {}
                 if payload.get("type") != "token_count":
                     continue
-                usage = (payload.get("info") or {}).get("total_token_usage") or {}
-                if not usage.get("total_tokens"):
+                usage = _validated_usage((payload.get("info") or {}).get("total_token_usage"))
+                if usage is None:
+                    invalid_token_event_count += 1
                     continue
                 timestamp = _parse_timestamp(record.get("timestamp"))
                 if not timestamp:
+                    invalid_token_event_count += 1
                     continue
                 events.append(
                     {
                         "timestamp": timestamp,
                         "lineNumber": line_number,
-                        "usage": {key: int(usage.get(key) or 0) for key in TOKEN_KEYS},
+                        "usage": usage,
                         "rateLimits": payload.get("rate_limits") or {},
                         "model": current_model,
                     }
                 )
-    events.sort(key=lambda event: (event["timestamp"], event["lineNumber"]))
-    return events
+    return {
+        "events": events,
+        "firstModel": first_model,
+        "damagedLineCount": damaged_line_count,
+        "invalidTokenEventCount": invalid_token_event_count,
+    }
+
+
+def _validated_usage(value: Any) -> Optional[Dict[str, int]]:
+    if not isinstance(value, dict) or "total_tokens" not in value:
+        return None
+    usage: Dict[str, int] = {}
+    for key in TOKEN_KEYS:
+        raw = value.get(key, 0)
+        if isinstance(raw, bool):
+            return None
+        try:
+            parsed = int(raw)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if parsed < 0 or (isinstance(raw, float) and not raw.is_integer()):
+            return None
+        usage[key] = parsed
+    return usage
 
 
 def read_session_metadata(path: Path) -> Dict[str, Any]:
     """Read only the first session_meta record, which belongs to this file."""
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line_number, line in enumerate(handle, start=1):
             if "session_meta" not in line:
                 continue
             try:
@@ -389,8 +583,14 @@ def read_session_metadata(path: Path) -> Dict[str, Any]:
                 "sessionId": payload.get("id"),
                 "forkedFromId": payload.get("forked_from_id"),
                 "createdAt": _parse_timestamp(payload.get("timestamp") or record.get("timestamp")),
+                "sessionMetaLine": line_number,
             }
-    return {"sessionId": None, "forkedFromId": None, "createdAt": None}
+    return {
+        "sessionId": None,
+        "forkedFromId": None,
+        "createdAt": None,
+        "sessionMetaLine": None,
+    }
 
 
 def read_session_model(path: Path) -> Optional[str]:
@@ -402,19 +602,7 @@ def read_session_model(path: Path) -> Optional[str]:
 
     Returns None if no turn_context event is found in the file.
     """
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if "turn_context" not in line:
-                continue
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if record.get("type") == "turn_context":
-                model = (record.get("payload") or {}).get("model")
-                if model:
-                    return model
-    return None
+    return _read_session_log(path)["firstModel"]
 
 
 def _resolve_fork_events(
@@ -428,30 +616,69 @@ def _resolve_fork_events(
     if parent_path is None or created_at is None:
         return "unresolved", None, child_events
 
-    parent_events = cached_events(parent_path)
-    parent_baseline = next(
-        (event for event in reversed(parent_events) if event["timestamp"] <= created_at),
-        None,
+    parent_events = sorted(
+        (
+            event
+            for event in cached_events(parent_path)
+            if event["timestamp"] <= created_at
+        ),
+        key=lambda item: item["lineNumber"],
     )
+    parent_baseline = parent_events[-1] if parent_events else None
     if parent_baseline is None:
         return "unresolved", None, child_events
 
     prefix_end = created_at + _FORK_PREFIX_GRACE
-    prefix_indexes = [
-        index for index, event in enumerate(child_events) if event["timestamp"] <= prefix_end
+    eligible_events = _eligible_child_events(child_events, metadata)
+    prefix_events = [
+        event for event in eligible_events if event["timestamp"] <= prefix_end
     ]
-    matching_events = [
-        child_events[index]
-        for index in prefix_indexes
-        if _usage_matches(child_events[index]["usage"], parent_baseline["usage"])
-    ]
-    if matching_events:
-        cutoff_line = max(event["lineNumber"] for event in matching_events)
-        effective_events = [event for event in child_events if event["lineNumber"] > cutoff_line]
+    cutoff_line = _matching_replay_cutoff(prefix_events, parent_events, parent_baseline)
+    if cutoff_line is not None:
+        effective_events = [event for event in eligible_events if event["lineNumber"] > cutoff_line]
         return "resolved", parent_baseline["usage"], effective_events
-    if not prefix_indexes:
+    if not prefix_events:
         return "not_replayed", None, child_events
-    return "unresolved", None, child_events
+    first_usage = min(prefix_events, key=lambda item: item["lineNumber"])["usage"]
+    if first_usage["total_tokens"] < parent_baseline["usage"]["total_tokens"]:
+        return "not_replayed", None, eligible_events
+    return "ambiguous", parent_baseline["usage"], eligible_events
+
+
+def _eligible_child_events(
+    child_events: Sequence[Dict[str, Any]], metadata: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    created_at = metadata.get("createdAt")
+    meta_line = metadata.get("sessionMetaLine")
+    return [
+        event
+        for event in child_events
+        if (meta_line is None or event["lineNumber"] > meta_line)
+        and (created_at is None or event["timestamp"] >= created_at)
+    ]
+
+
+def _matching_replay_cutoff(
+    child_prefix: Sequence[Dict[str, Any]],
+    parent_events: Sequence[Dict[str, Any]],
+    parent_baseline: Dict[str, Any],
+) -> Optional[int]:
+    ordered_child = sorted(child_prefix, key=lambda item: item["lineNumber"])
+    ordered_parent = sorted(parent_events, key=lambda item: item["lineNumber"])
+    cutoffs: List[int] = []
+    for index, event in enumerate(ordered_child):
+        candidate = ordered_child[: index + 1]
+        if len(candidate) < 2 or len(candidate) > len(ordered_parent):
+            continue
+        if not _usage_matches(event["usage"], parent_baseline["usage"]):
+            continue
+        parent_suffix = ordered_parent[-len(candidate) :]
+        if all(
+            _usage_matches(child["usage"], parent["usage"])
+            for child, parent in zip(candidate, parent_suffix)
+        ):
+            cutoffs.append(event["lineNumber"])
+    return max(cutoffs) if cutoffs else None
 
 
 def _usage_matches(left: Dict[str, int], right: Dict[str, int]) -> bool:
@@ -459,8 +686,14 @@ def _usage_matches(left: Dict[str, int], right: Dict[str, int]) -> bool:
 
 
 def render_codex_report(report: Dict[str, Any], lang: str = "en") -> str:
-    text = TEXT[normalize_lang(lang)]
+    normalized = normalize_lang(lang)
+    text = TEXT[normalized]
     summary = report["summary"]
+    confidence_labels = (
+        ("Inclusive", "Verified", "Unverified")
+        if normalized == "en"
+        else ("Inclusive（含不确定量）", "Verified（已验证）", "Unverified（未验证）")
+    )
     lines = [
         text["title"],
         "",
@@ -475,8 +708,44 @@ def render_codex_report(report: Dict[str, Any], lang: str = "en") -> str:
             excluded=_format_int(summary.get("forkReplayTokensExcluded")),
         ),
     ]
+    if normalized == "en":
+        lines.append(
+            f"Fork states: ambiguous={summary.get('ambiguousForkCount', 0)}, "
+            f"not_replayed={summary.get('notReplayedForkCount', 0)}."
+        )
+    else:
+        lines.append(
+            f"Fork 状态：ambiguous={summary.get('ambiguousForkCount', 0)}，"
+            f"not_replayed={summary.get('notReplayedForkCount', 0)}。"
+        )
     if summary.get("unresolvedForkCount"):
         lines.extend([text["fork_warning"], ""])
+    lines.extend(
+        [
+            f"{confidence_labels[0]} Total: {_format_int(summary.get('totalTokens'))}",
+            f"{confidence_labels[1]} Total: {_format_int((summary.get('verifiedUsage') or {}).get('totalTokens'))}",
+            f"{confidence_labels[2]} Total: {_format_int((summary.get('unverifiedUsage') or {}).get('totalTokens'))}",
+        ]
+    )
+    if summary.get("unverifiedUsage", {}).get("totalTokens"):
+        lines.append(
+            "Warning: inclusive usage contains an unverified amount."
+            if normalized == "en"
+            else "警告：Inclusive 用量中包含尚未验证的部分。"
+        )
+    if summary.get("damagedLineCount") or summary.get("invalidTokenEventCount"):
+        warning = (
+            "Data quality warning"
+            if normalized == "en"
+            else "数据质量警告"
+        )
+        lines.extend(
+            [
+                f"{warning}: damaged lines={summary.get('damagedLineCount', 0)}, "
+                f"invalid token events={summary.get('invalidTokenEventCount', 0)}",
+                "",
+            ]
+        )
     if summary["sessionCount"] == 0:
         lines.append(text["no_records"])
         return "\n".join(lines)
@@ -597,15 +866,50 @@ def export_codex_report(report: Dict[str, Any], output: Path, fmt: str) -> None:
         "secondaryUsedPercentDelta",
         "secondaryUsedPercentMax",
         "secondaryResetsAt",
+        "verifiedInputTokens",
+        "verifiedCachedInputTokens",
+        "verifiedNonCachedInputTokens",
+        "verifiedOutputTokens",
+        "verifiedReasoningOutputTokens",
+        "verifiedTotalTokens",
+        "unverifiedInputTokens",
+        "unverifiedCachedInputTokens",
+        "unverifiedNonCachedInputTokens",
+        "unverifiedOutputTokens",
+        "unverifiedReasoningOutputTokens",
+        "unverifiedTotalTokens",
+        "usageConfidence",
+        "ambiguousForkCount",
+        "notReplayedForkCount",
+        "damagedLineCount",
+        "invalidTokenEventCount",
+        "counterResetCount",
+        "counterAnomalyCount",
     ]
     with output.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in report["sessions"]:
-            writer.writerow({key: row.get(key) for key in fieldnames})
+            flattened = dict(row)
+            flattened.update(_flatten_usage("verified", row.get("verifiedUsage") or {}))
+            flattened.update(_flatten_usage("unverified", row.get("unverifiedUsage") or {}))
+            writer.writerow({key: flattened.get(key) for key in fieldnames})
         summary = {"sessionFile": "TOTAL", "tokenEvents": report["summary"]["tokenEventCount"]}
         summary.update({key: report["summary"].get(key) for key in fieldnames if key in report["summary"]})
+        summary.update(_flatten_usage("verified", report["summary"].get("verifiedUsage") or {}))
+        summary.update(_flatten_usage("unverified", report["summary"].get("unverifiedUsage") or {}))
         writer.writerow({key: summary.get(key) for key in fieldnames})
+
+
+def _flatten_usage(prefix: str, usage: Dict[str, Any]) -> Dict[str, int]:
+    return {
+        f"{prefix}InputTokens": int(usage.get("inputTokens") or 0),
+        f"{prefix}CachedInputTokens": int(usage.get("cachedInputTokens") or 0),
+        f"{prefix}NonCachedInputTokens": int(usage.get("nonCachedInputTokens") or 0),
+        f"{prefix}OutputTokens": int(usage.get("outputTokens") or 0),
+        f"{prefix}ReasoningOutputTokens": int(usage.get("reasoningOutputTokens") or 0),
+        f"{prefix}TotalTokens": int(usage.get("totalTokens") or 0),
+    }
 
 
 def _rate_snapshot(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -614,8 +918,6 @@ def _rate_snapshot(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     secondary = limits.get("secondary") or {}
     if not primary and not secondary:
         return None
-    if not _is_effective_rate(primary, secondary):
-        return None
     return {
         "timestamp": event["timestamp"],
         "primaryUsedPercent": _optional_float(primary.get("used_percent")),
@@ -623,12 +925,6 @@ def _rate_snapshot(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "secondaryUsedPercent": _optional_float(secondary.get("used_percent")),
         "secondaryResetsAt": _timestamp_from_epoch(secondary.get("resets_at")),
     }
-
-
-def _is_effective_rate(primary: Dict[str, Any], secondary: Dict[str, Any]) -> bool:
-    primary_used = _optional_float(primary.get("used_percent")) or 0.0
-    secondary_used = _optional_float(secondary.get("used_percent")) or 0.0
-    return primary_used > 0 or secondary_used > 0
 
 
 def _rate_summary_fields(events: Sequence[Optional[Dict[str, Any]]]) -> Dict[str, Any]:
@@ -667,29 +963,87 @@ def _rate_row(label: str, prefix: str, summary: Dict[str, Any], unavailable: str
     ]
 
 
+def _event_deltas_for_window(
+    events: Sequence[Dict[str, Any]],
+    start: datetime,
+    end: datetime,
+    initial_base: Dict[str, int],
+) -> Tuple[List[Dict[str, Any]], Dict[str, int], int, int]:
+    rows: List[Dict[str, Any]] = []
+    totals = _empty_totals()
+    previous = initial_base
+    reset_count = 0
+    anomaly_count = 0
+    for event in sorted(events, key=lambda item: item["lineNumber"]):
+        current = event["usage"]
+        reset = int(current["total_tokens"] < previous["total_tokens"])
+        if reset:
+            delta = {key: int(current.get(key) or 0) for key in TOKEN_KEYS}
+        else:
+            delta = _usage_delta(previous, current)
+        anomaly = int(
+            not reset
+            and any(
+                int(current.get(key) or 0) < int(previous.get(key) or 0)
+                for key in TOKEN_KEYS
+                if key != "total_tokens"
+            )
+        )
+        previous = current
+        if not start <= event["timestamp"] <= end:
+            continue
+        rows.append({"event": event, "delta": delta, "reset": reset, "anomaly": anomaly})
+        for key in TOKEN_KEYS:
+            totals[key] += delta[key]
+        reset_count += reset
+        anomaly_count += anomaly
+    return rows, totals, reset_count, anomaly_count
+
+
+def _sum_delta_rows(rows: Sequence[Dict[str, Any]]) -> Dict[str, int]:
+    totals = _empty_totals()
+    for row in rows:
+        for key in TOKEN_KEYS:
+            totals[key] += int(row["delta"].get(key) or 0)
+    return totals
+
+
 def _usage_delta(base: Dict[str, int], current: Dict[str, int]) -> Dict[str, int]:
     return {key: max(int(current.get(key) or 0) - int(base.get(key) or 0), 0) for key in TOKEN_KEYS}
+
+
+def _usage_difference(left: Dict[str, int], right: Dict[str, int]) -> Dict[str, int]:
+    return {
+        key: max(int(left.get(key) or 0) - int(right.get(key) or 0), 0)
+        for key in TOKEN_KEYS
+    }
 
 
 def _new_timeline_buckets(start: datetime, end: datetime) -> List[Dict[str, Any]]:
     span = _timeline_bucket_span(start, end)
     buckets: List[Dict[str, Any]] = []
-    cursor = start
-    while cursor <= end:
-        bucket_end = min(cursor + span, end)
+    display_tz = start.tzinfo
+    utc_end = end.astimezone(timezone.utc)
+    calendar_aligned = span >= timedelta(days=1)
+    cursor = start if calendar_aligned else start.astimezone(timezone.utc)
+    while cursor.astimezone(timezone.utc) <= utc_end:
+        candidate_end = cursor + span
+        bucket_end = end if candidate_end.astimezone(timezone.utc) > utc_end else candidate_end
         buckets.append(
             {
-                "bucketStart": cursor,
-                "bucketEnd": bucket_end,
+                "bucketStart": cursor.astimezone(display_tz),
+                "bucketEnd": bucket_end.astimezone(display_tz),
                 "tokenEvents": 0,
                 "rateTimestamp": None,
                 "primaryUsedPercent": None,
                 "secondaryUsedPercent": None,
+                "verifiedTotals": _empty_totals(),
+                **_empty_audit(),
                 **_empty_totals(),
             }
         )
         cursor = bucket_end
-        if cursor == end:
+        if cursor.astimezone(timezone.utc) == utc_end:
             break
     if not buckets:
         buckets.append(
@@ -700,6 +1054,8 @@ def _new_timeline_buckets(start: datetime, end: datetime) -> List[Dict[str, Any]
                 "rateTimestamp": None,
                 "primaryUsedPercent": None,
                 "secondaryUsedPercent": None,
+                "verifiedTotals": _empty_totals(),
+                **_empty_audit(),
                 **_empty_totals(),
             }
         )
@@ -707,7 +1063,7 @@ def _new_timeline_buckets(start: datetime, end: datetime) -> List[Dict[str, Any]
 
 
 def _timeline_bucket_span(start: datetime, end: datetime) -> timedelta:
-    duration = end - start
+    duration = end.astimezone(timezone.utc) - start.astimezone(timezone.utc)
     if duration <= timedelta(days=2):
         return timedelta(hours=1)
     if duration <= timedelta(days=31):
@@ -717,22 +1073,21 @@ def _timeline_bucket_span(start: datetime, end: datetime) -> timedelta:
 
 def _add_event_to_timeline(
     buckets: List[Dict[str, Any]],
-    start: datetime,
     event: Dict[str, Any],
     delta: Dict[str, int],
+    verified_delta: Dict[str, int],
+    reset: int,
+    anomaly: int,
 ) -> None:
     if not buckets:
         return
-    first_span = buckets[0]["bucketEnd"] - buckets[0]["bucketStart"]
-    if first_span.total_seconds() <= 0:
-        index = 0
-    else:
-        seconds = max((event["timestamp"] - start).total_seconds(), 0)
-        index = int(seconds // first_span.total_seconds())
-    bucket = buckets[min(max(index, 0), len(buckets) - 1)]
+    bucket = buckets[_timeline_bucket_index(buckets, event["timestamp"])]
     bucket["tokenEvents"] += 1
+    bucket["counterResetCount"] += reset
+    bucket["counterAnomalyCount"] += anomaly
     for key in TOKEN_KEYS:
         bucket[key] += delta[key]
+        bucket["verifiedTotals"][key] += verified_delta[key]
 
     snapshot = _rate_snapshot(event)
     if not snapshot:
@@ -744,14 +1099,53 @@ def _add_event_to_timeline(
     bucket["secondaryUsedPercent"] = snapshot.get("secondaryUsedPercent")
 
 
+def _add_session_audit_to_timeline(
+    buckets: List[Dict[str, Any]],
+    event: Dict[str, Any],
+    damaged_lines: int,
+    invalid_events: int,
+    fork_status: Optional[str],
+) -> None:
+    if not buckets:
+        return
+    bucket = buckets[_timeline_bucket_index(buckets, event["timestamp"])]
+    bucket["damagedLineCount"] += damaged_lines
+    bucket["invalidTokenEventCount"] += invalid_events
+    if fork_status:
+        bucket[_fork_status_count_key(fork_status)] += 1
+
+
+def _timeline_bucket_index(
+    buckets: Sequence[Dict[str, Any]], timestamp: datetime
+) -> int:
+    target = timestamp.astimezone(timezone.utc)
+    low = 0
+    high = len(buckets)
+    while low < high:
+        middle = (low + high) // 2
+        bucket_start = buckets[middle]["bucketStart"].astimezone(timezone.utc)
+        if bucket_start <= target:
+            low = middle + 1
+        else:
+            high = middle
+    return min(max(low - 1, 0), len(buckets) - 1)
+
+
 def _public_timeline(buckets: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for bucket in buckets:
+        verified = bucket["verifiedTotals"]
         row = {
             "bucketStart": bucket["bucketStart"].isoformat(),
             "bucketEnd": bucket["bucketEnd"].isoformat(),
             "tokenEvents": bucket["tokenEvents"],
             **_public_usage(bucket),
+            "verifiedUsage": _public_usage(verified),
+            "unverifiedUsage": _public_usage(_usage_difference(bucket, verified)),
+            "usageConfidence": (
+                "verified" if bucket["total_tokens"] == verified["total_tokens"] else "unverified"
+            ),
+            **{key: bucket[key] for key in _empty_audit()},
             "primaryUsedPercent": bucket.get("primaryUsedPercent"),
             "secondaryUsedPercent": bucket.get("secondaryUsedPercent"),
         }
@@ -776,6 +1170,28 @@ def _empty_totals() -> Dict[str, int]:
     return {key: 0 for key in TOKEN_KEYS}
 
 
+def _empty_audit() -> Dict[str, int]:
+    return {
+        "resolvedForkCount": 0,
+        "unresolvedForkCount": 0,
+        "ambiguousForkCount": 0,
+        "notReplayedForkCount": 0,
+        "damagedLineCount": 0,
+        "invalidTokenEventCount": 0,
+        "counterResetCount": 0,
+        "counterAnomalyCount": 0,
+    }
+
+
+def _fork_status_count_key(status: str) -> str:
+    return {
+        "resolved": "resolvedForkCount",
+        "unresolved": "unresolvedForkCount",
+        "ambiguous": "ambiguousForkCount",
+        "not_replayed": "notReplayedForkCount",
+    }[status]
+
+
 def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
@@ -783,7 +1199,7 @@ def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
-    return parsed.astimezone()
+    return parsed.astimezone(LOCAL_TIMEZONE)
 
 
 def _parse_date(value: str) -> date:
@@ -793,24 +1209,35 @@ def _parse_date(value: str) -> date:
         raise UsageError(f'Could not parse date "{value}". Use YYYY-MM-DD.')
 
 
-def _day_bounds(value: date, end: Optional[datetime] = None) -> Tuple[datetime, datetime]:
-    now = datetime.now().astimezone()
-    start = datetime.combine(value, time.min).replace(tzinfo=now.tzinfo)
+def _day_bounds(
+    value: date,
+    end: Optional[datetime] = None,
+    tz: Optional[tzinfo] = None,
+) -> Tuple[datetime, datetime]:
+    local_tz = tz or LOCAL_TIMEZONE
+    start = datetime.combine(value, time.min, tzinfo=local_tz)
     if end:
         return start, end
-    return start, datetime.combine(value, time.max).replace(tzinfo=now.tzinfo)
+    return start, datetime.combine(value, time.max, tzinfo=local_tz)
 
 
-def _parse_datetime_filter(value: str, end_of_day: bool = False) -> datetime:
+def _parse_datetime_filter(
+    value: str,
+    end_of_day: bool = False,
+    tz: Optional[tzinfo] = None,
+) -> datetime:
+    local_tz = tz or LOCAL_TIMEZONE
     if len(value) == 10:
         parsed_date = _parse_date(value)
         parsed_time = time.max if end_of_day else time.min
-        return datetime.combine(parsed_date, parsed_time).astimezone()
+        return datetime.combine(parsed_date, parsed_time, tzinfo=local_tz)
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         raise UsageError(f'Could not parse datetime "{value}". Use YYYY-MM-DD or an ISO timestamp.')
-    return parsed.astimezone()
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=local_tz)
+    return parsed.astimezone(local_tz)
 
 
 def _parse_since_delta(value: str) -> timedelta:
@@ -837,7 +1264,7 @@ def _timestamp_from_epoch(value: Any) -> Optional[str]:
     if value is None:
         return None
     try:
-        return datetime.fromtimestamp(float(value)).astimezone().isoformat()
+        return datetime.fromtimestamp(float(value), tz=LOCAL_TIMEZONE).isoformat()
     except (TypeError, ValueError, OSError):
         return None
 

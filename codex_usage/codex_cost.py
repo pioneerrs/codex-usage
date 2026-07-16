@@ -14,6 +14,7 @@ DEFAULT_INPUT_RATE_PER_M = 5.0
 DEFAULT_CACHED_INPUT_RATE_PER_M = 0.5
 DEFAULT_OUTPUT_RATE_PER_M = 30.0
 DEFAULT_CREDITS_PER_USD = 25.0
+RATE_CARD_AS_OF = "2026-07-17"
 
 MODEL_RATE_CARD = {
     "gpt-5.6": {
@@ -51,10 +52,15 @@ MODEL_RATE_CARD = {
         "cached_input_rate_per_m": 0.075,
         "output_rate_per_m": 4.5,
     },
-    "gpt-5.3-codex-spark": {
-        "input_rate_per_m": 0.0,
-        "cached_input_rate_per_m": 0.0,
-        "output_rate_per_m": 0.0,
+    "gpt-5.3-codex": {
+        "input_rate_per_m": 1.75,
+        "cached_input_rate_per_m": 0.175,
+        "output_rate_per_m": 14.0,
+    },
+    "gpt-5.2": {
+        "input_rate_per_m": 1.75,
+        "cached_input_rate_per_m": 0.175,
+        "output_rate_per_m": 14.0,
     },
     "codex-auto-review": {
         "input_rate_per_m": 2.5,
@@ -62,20 +68,40 @@ MODEL_RATE_CARD = {
         "output_rate_per_m": 15.0,
     },
 }
+UNPRICED_MODELS = {"gpt-5.3-codex-spark"}
 
 
-def get_model_rate_card(model: str) -> Dict[str, float]:
+def get_model_rate_card(model: str) -> Dict[str, Any]:
     """Return the rate card for the given model.
 
     Falls back to the gpt-5.5 rate card if the model is not found.
     """
-    return MODEL_RATE_CARD.get(model, MODEL_RATE_CARD["gpt-5.5"])
+    matched = model in MODEL_RATE_CARD
+    card = dict(MODEL_RATE_CARD.get(model, MODEL_RATE_CARD["gpt-5.5"]))
+    if model in UNPRICED_MODELS:
+        status = "unpriced-fallback"
+        source = "openai-official"
+    elif not matched:
+        status = "fallback"
+        source = "fallback-gpt-5.5"
+    else:
+        status = "priced"
+        source = "repository-internal" if model == "codex-auto-review" else "openai-official"
+    card.update(
+        {
+            "rate_card_status": status,
+            "rate_card_source": source,
+            "rate_card_as_of": RATE_CARD_AS_OF,
+        }
+    )
+    return card
 
 
 TEXT = {
     "en": {
         "title": "Codex API-Equivalent Cost Estimate",
         "unknown_warning": "Warning: unknown model(s) {models} used the gpt-5.5 fallback rate card.",
+        "unpriced_warning": "Warning: unpriced model(s) {models} used the gpt-5.5 fallback rate card.",
         "window": "Window",
         "source": "Source",
         "pricing": "Pricing",
@@ -104,9 +130,15 @@ TEXT = {
         "by_model": "By Model",
         "model": "Model",
         "model_rate_card": "Rate Card",
+        "inclusive": "Inclusive",
+        "verified": "Verified",
+        "unverified": "Unverified",
+        "rate_card": "Rate card",
+        "warning": "Warning",
     },
     "zh": {
         "unknown_warning": "警告：未知模型 {models} 使用了 gpt-5.5 默认费率。",
+        "unpriced_warning": "警告：未定价模型 {models} 使用了 gpt-5.5 fallback 费率。",
         "title": "Codex API 等价费用估算",
         "window": "时间窗口",
         "source": "数据来源",
@@ -136,6 +168,11 @@ TEXT = {
         "by_model": "按模型分组",
         "model": "Model",
         "model_rate_card": "费率卡",
+        "inclusive": "Inclusive（含不确定量）",
+        "verified": "Verified（已验证）",
+        "unverified": "Unverified（未验证）",
+        "rate_card": "费率卡",
+        "warning": "警告",
     },
 }
 
@@ -183,6 +220,29 @@ def build_codex_cost_report(
     total_cost = sum(item["costUSD"] for item in line_items)
     total_credits = total_cost * credits_per_usd
     total_billable_tokens = sum(item["tokens"] for item in line_items)
+    verified_summary = summary.get("verifiedUsage") or summary
+    verified_line_items = [
+        _line_item(
+            "non_cached_input",
+            int(verified_summary.get("nonCachedInputTokens") or 0),
+            input_rate_per_m,
+            credits_per_usd,
+        ),
+        _line_item(
+            "cached_input",
+            int(verified_summary.get("cachedInputTokens") or 0),
+            cached_input_rate_per_m,
+            credits_per_usd,
+        ),
+        _line_item(
+            "output",
+            int(verified_summary.get("outputTokens") or 0),
+            output_rate_per_m,
+            credits_per_usd,
+        ),
+    ]
+    verified_cost = sum(item["costUSD"] for item in verified_line_items)
+    unverified_cost = max(total_cost - verified_cost, 0.0)
 
     result: Dict[str, Any] = {
         "summary": {
@@ -197,7 +257,14 @@ def build_codex_cost_report(
             "reasoningOutputTokens": int(summary.get("reasoningOutputTokens") or 0),
             "totalCostUSD": total_cost,
             "totalCredits": total_credits,
+            "verifiedCostUSD": verified_cost,
+            "unverifiedCostUSD": unverified_cost,
+            "verifiedCredits": verified_cost * credits_per_usd,
+            "unverifiedCredits": unverified_cost * credits_per_usd,
             "creditsPerUSD": credits_per_usd,
+            "rateCardStatus": "user-supplied",
+            "rateCardSource": "user-supplied",
+            "rateCardAsOf": None,
             "ratesPerMillion": {
                 "input": input_rate_per_m,
                 "cachedInput": cached_input_rate_per_m,
@@ -206,16 +273,20 @@ def build_codex_cost_report(
         },
         "lineItems": line_items,
         "unknownModels": [],
+        "unpricedModels": [],
     }
 
     by_model_usage = summary.get("byModel") or {}
     if use_model_rates and by_model_usage:
         by_model_cost: Dict[str, Dict[str, Any]] = {}
         unknown_models: List[str] = []
+        unpriced_models: List[str] = []
         for model, model_data in sorted(by_model_usage.items()):
             rate_card = get_model_rate_card(model)
             rate_card_matched = model in MODEL_RATE_CARD
-            if not rate_card_matched:
+            if model in UNPRICED_MODELS:
+                unpriced_models.append(model)
+            elif not rate_card_matched:
                 unknown_models.append(model)
             model_input = int(model_data.get("nonCachedInputTokens") or 0)
             model_cached = int(model_data.get("cachedInputTokens") or 0)
@@ -227,6 +298,29 @@ def build_codex_cost_report(
             ]
             model_cost = sum(item["costUSD"] for item in model_line_items)
             model_credits = model_cost * credits_per_usd
+            verified_model_data = model_data.get("verifiedUsage") or model_data
+            verified_model_line_items = [
+                _line_item(
+                    "non_cached_input",
+                    int(verified_model_data.get("nonCachedInputTokens") or 0),
+                    rate_card["input_rate_per_m"],
+                    credits_per_usd,
+                ),
+                _line_item(
+                    "cached_input",
+                    int(verified_model_data.get("cachedInputTokens") or 0),
+                    rate_card["cached_input_rate_per_m"],
+                    credits_per_usd,
+                ),
+                _line_item(
+                    "output",
+                    int(verified_model_data.get("outputTokens") or 0),
+                    rate_card["output_rate_per_m"],
+                    credits_per_usd,
+                ),
+            ]
+            model_verified_cost = sum(item["costUSD"] for item in verified_model_line_items)
+            model_unverified_cost = max(model_cost - model_verified_cost, 0.0)
             by_model_cost[model] = {
                 "modelLabel": model,
                 "sessionCount": int(model_data.get("sessionCount") or 0),
@@ -234,7 +328,14 @@ def build_codex_cost_report(
                 "billableTokens": model_input + model_cached + model_output,
                 "totalCostUSD": model_cost,
                 "totalCredits": model_credits,
+                "verifiedCostUSD": model_verified_cost,
+                "unverifiedCostUSD": model_unverified_cost,
+                "verifiedCredits": model_verified_cost * credits_per_usd,
+                "unverifiedCredits": model_unverified_cost * credits_per_usd,
                 "rateCardMatched": rate_card_matched,
+                "rateCardStatus": rate_card["rate_card_status"],
+                "rateCardSource": rate_card["rate_card_source"],
+                "rateCardAsOf": rate_card["rate_card_as_of"],
                 "ratesPerMillion": {
                     "input": rate_card["input_rate_per_m"],
                     "cachedInput": rate_card["cached_input_rate_per_m"],
@@ -244,12 +345,24 @@ def build_codex_cost_report(
             }
         result["byModel"] = by_model_cost
         result["unknownModels"] = unknown_models
+        result["unpricedModels"] = unpriced_models
 
         # Override the global summary cost with the sum of per-model costs
         total_cost_by_model = sum(m["totalCostUSD"] for m in by_model_cost.values())
         total_credits_by_model = total_cost_by_model * credits_per_usd
         result["summary"]["totalCostUSD"] = total_cost_by_model
         result["summary"]["totalCredits"] = total_credits_by_model
+        verified_cost_by_model = sum(m["verifiedCostUSD"] for m in by_model_cost.values())
+        unverified_cost_by_model = max(total_cost_by_model - verified_cost_by_model, 0.0)
+        result["summary"]["verifiedCostUSD"] = verified_cost_by_model
+        result["summary"]["unverifiedCostUSD"] = unverified_cost_by_model
+        result["summary"]["verifiedCredits"] = verified_cost_by_model * credits_per_usd
+        result["summary"]["unverifiedCredits"] = unverified_cost_by_model * credits_per_usd
+        statuses = {m["rateCardStatus"] for m in by_model_cost.values()}
+        sources = {m["rateCardSource"] for m in by_model_cost.values()}
+        result["summary"]["rateCardStatus"] = next(iter(statuses)) if len(statuses) == 1 else "mixed"
+        result["summary"]["rateCardSource"] = next(iter(sources)) if len(sources) == 1 else "mixed"
+        result["summary"]["rateCardAsOf"] = RATE_CARD_AS_OF
         # Update line items to reflect per-model cost aggregation
         result["lineItems"] = _aggregate_line_items_from_models(by_model_cost)
 
@@ -276,11 +389,28 @@ def render_codex_cost_report(cost_report: Dict[str, Any], lang: str = "en") -> s
         f"{text['window']}: {summary['windowStart']} -> {summary['windowEnd']}",
         f"{text['source']}: {summary['sourceRoot']}",
         pricing_line,
+        f"{text['rate_card']}: {summary.get('rateCardStatus')} / {summary.get('rateCardSource')} / {summary.get('rateCardAsOf') or 'user supplied'}",
         "",
     ]
     unknown_models = cost_report.get("unknownModels") or []
     if unknown_models:
         lines.extend([text["unknown_warning"].format(models=", ".join(unknown_models)), ""])
+    unpriced_models = cost_report.get("unpricedModels") or []
+    if unpriced_models:
+        warning = text.get(
+            "unpriced_warning",
+            "Warning: unpriced model(s) {models} used the gpt-5.5 fallback rate card.",
+        )
+        lines.extend([warning.format(models=", ".join(unpriced_models)), ""])
+
+    lines.extend(
+        [
+            f"{text['inclusive']}: {_format_money(summary['totalCostUSD'])} / {_format_credits(summary['totalCredits'])} credits",
+            f"{text['verified']}: {_format_money(summary['verifiedCostUSD'])} / {_format_credits(summary['verifiedCredits'])} credits",
+            f"{text['unverified']}: {_format_money(summary['unverifiedCostUSD'])} / {_format_credits(summary['unverifiedCredits'])} credits",
+            "",
+        ]
+    )
 
     lines.extend(
         render_table(
@@ -289,7 +419,9 @@ def render_codex_cost_report(cost_report: Dict[str, Any], lang: str = "en") -> s
                 [
                     text[item["type"]],
                     _format_int(item["tokens"]),
-                    f"${item['ratePerMillion']:g} / 1M" if item["ratePerMillion"] > 0 else "(mixed)",
+                    "(mixed)"
+                    if item.get("rateIsMixed")
+                    else f"${item['ratePerMillion']:g} / 1M",
                     _format_money(item["costUSD"]),
                     _format_credits(item["credits"]),
                 ]
@@ -367,6 +499,20 @@ def render_codex_cost_chart_html(cost_report: Dict[str, Any], lang: str = "en") 
     ]
     if by_model:
         sections.insert(1, _section(text["by_model"], _cost_by_model_section(by_model, text)))
+    warning_messages = []
+    if cost_report.get("unknownModels"):
+        warning_messages.append(
+            text["unknown_warning"].format(models=", ".join(cost_report["unknownModels"]))
+        )
+    if cost_report.get("unpricedModels"):
+        warning_messages.append(
+            text.get(
+                "unpriced_warning",
+                "Warning: unpriced model(s) {models} used the gpt-5.5 fallback rate card.",
+            ).format(models=", ".join(cost_report["unpricedModels"]))
+        )
+    if warning_messages:
+        sections.insert(0, _section(text["warning"], "".join(f"<p>{escape(message)}</p>" for message in warning_messages)))
 
     return "\n".join(
         [
@@ -384,11 +530,16 @@ def render_codex_cost_chart_html(cost_report: Dict[str, Any], lang: str = "en") 
             f"<h1>{escape(text['title'])}</h1>",
             f"<p>{escape(text['window'])}: {escape(str(summary['windowStart']))} -> {escape(str(summary['windowEnd']))}</p>",
             '<div class="meta-grid">',
-            f"<div><span>{escape(text['api_equivalent'])}</span>{escape(_format_money(summary['totalCostUSD']))}</div>",
-            f"<div><span>{escape(text['credits'])}</span>{escape(_format_credits(summary['totalCredits']))}</div>",
+            f"<div><span>{escape(text['inclusive'])} {escape(text['api_equivalent'])}</span>{escape(_format_money(summary['totalCostUSD']))}</div>",
+            f"<div><span>{escape(text['inclusive'])} {escape(text['credits'])}</span>{escape(_format_credits(summary['totalCredits']))}</div>",
+            f"<div><span>{escape(text['verified'])} {escape(text['api_equivalent'])}</span>{escape(_format_money(summary['verifiedCostUSD']))}</div>",
+            f"<div><span>{escape(text['unverified'])} {escape(text['api_equivalent'])}</span>{escape(_format_money(summary['unverifiedCostUSD']))}</div>",
+            f"<div><span>{escape(text['verified'])} Credits</span>{escape(_format_credits(summary['verifiedCredits']))}</div>",
+            f"<div><span>{escape(text['unverified'])} Credits</span>{escape(_format_credits(summary['unverifiedCredits']))}</div>",
             f"<div><span>{escape(text['total_tokens'])}</span>{escape(_format_int(summary['totalTokens']))}</div>",
             f"<div><span>{escape(text['reasoning'])}</span>{escape(_format_int(summary['reasoningOutputTokens']))}</div>",
             f"<div><span>{escape(text['source'])}</span>{escape(str(summary['sourceRoot']))}</div>",
+            f"<div><span>{escape(text['rate_card'])}</span>{escape(str(summary.get('rateCardStatus')))} / {escape(str(summary.get('rateCardSource')))}</div>",
             f"<div><span>{escape('Generated')}</span>{escape(generated)}</div>",
             "</div>",
             "</header>",
@@ -407,20 +558,25 @@ def _aggregate_line_items_from_models(by_model_cost: Dict[str, Dict[str, Any]]) 
     from collections import defaultdict
 
     by_type: Dict[str, Dict[str, float]] = defaultdict(lambda: {"tokens": 0, "costUSD": 0.0, "credits": 0.0})
+    rates_by_type: Dict[str, set] = defaultdict(set)
     for model_data in by_model_cost.values():
         for item in model_data.get("lineItems") or []:
             bucket = by_type[item["type"]]
             bucket["tokens"] += item["tokens"]
             bucket["costUSD"] += item["costUSD"]
             bucket["credits"] += item["credits"]
+            rates_by_type[item["type"]].add(float(item["ratePerMillion"]))
     result = []
     for item_type in ("non_cached_input", "cached_input", "output"):
         bucket = by_type[item_type]
+        rates = rates_by_type[item_type]
+        mixed = len(rates) > 1
         result.append(
             {
                 "type": item_type,
                 "tokens": int(bucket["tokens"]),
-                "ratePerMillion": 0.0,  # No single rate when mixing models
+                "ratePerMillion": 0.0 if mixed or not rates else next(iter(rates)),
+                "rateIsMixed": mixed,
                 "costUSD": bucket["costUSD"],
                 "credits": bucket["credits"],
             }
@@ -434,6 +590,7 @@ def _line_item(item_type: str, tokens: int, rate_per_million: float, credits_per
         "type": item_type,
         "tokens": tokens,
         "ratePerMillion": rate_per_million,
+        "rateIsMixed": False,
         "costUSD": cost,
         "credits": cost * credits_per_usd,
     }
@@ -589,7 +746,11 @@ def _cost_mix_svg(line_items: List[Dict[str, Any]], text: Dict[str, str]) -> str
 def _cost_table(line_items: List[Dict[str, Any]], summary: Dict[str, Any], text: Dict[str, str]) -> str:
     rows = []
     for item in line_items:
-        rate_text = f"${item['ratePerMillion']:g} / 1M"
+        rate_text = (
+            "(mixed)"
+            if item.get("rateIsMixed")
+            else f"${item['ratePerMillion']:g} / 1M"
+        )
         rows.append(
             "<tr>"
             f"<td>{escape(text[item['type']])}</td>"

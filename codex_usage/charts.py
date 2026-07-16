@@ -45,6 +45,9 @@ TEXT = {
         "model_cached": "Cached Input",
         "model_output": "Output",
         "model_total": "Total",
+        "inclusive": "Inclusive",
+        "verified": "Verified",
+        "unverified": "Unverified",
     },
     "zh": {
         "title": "Codex 用量图表",
@@ -83,6 +86,9 @@ TEXT = {
         "model_cached": "Cached Input",
         "model_output": "Output",
         "model_total": "Total",
+        "inclusive": "Inclusive（含不确定量）",
+        "verified": "Verified（已验证）",
+        "unverified": "Unverified（未验证）",
     },
 }
 
@@ -108,11 +114,23 @@ def render_codex_chart_html(report: Dict[str, Any], lang: str = "en") -> str:
     generated = datetime.now().astimezone().isoformat(timespec="seconds")
 
     if int(summary.get("sessionCount") or 0) == 0:
-        main = _section(text["summary"], f'<p class="empty">{escape(text["no_records"])}</p>')
+        empty_sections = [
+            _section(text["summary"], f'<p class="empty">{escape(text["no_records"])}</p>')
+        ]
+        if summary.get("damagedLineCount") or summary.get("invalidTokenEventCount"):
+            empty_sections.append(
+                _section(_quality_title(normalized), _quality_warning(summary, normalized))
+            )
+        main = "\n".join(empty_sections)
     else:
         main = "\n".join(
             [
                 _section(text["summary"], _summary_cards(summary, text)),
+                *(
+                    [_section(_quality_title(normalized), _quality_warning(summary, normalized))]
+                    if summary.get("damagedLineCount") or summary.get("invalidTokenEventCount")
+                    else []
+                ),
                 _section(text["token_mix"], _token_mix_svg(summary, text)),
                 _section(text["by_model"], _by_model_usage_section(summary.get("byModel") or {}, text)),
                 _section(text["timeline"], _timeline_svg(report.get("timeline") or [], text)),
@@ -294,8 +312,12 @@ def _section(title: str, body: str) -> str:
 
 
 def _summary_cards(summary: Dict[str, Any], text: Dict[str, str]) -> str:
+    verified = summary.get("verifiedUsage") or summary
+    unverified = summary.get("unverifiedUsage") or {}
     cards = [
-        (text["total"], summary.get("totalTokens")),
+        (f"{text['inclusive']} {text['total']}", summary.get("totalTokens")),
+        (f"{text['verified']} {text['total']}", verified.get("totalTokens")),
+        (f"{text['unverified']} {text['total']}", unverified.get("totalTokens")),
         (text["input"], summary.get("inputTokens")),
         (text["cached_input"], summary.get("cachedInputTokens")),
         (text["non_cached_input"], summary.get("nonCachedInputTokens")),
@@ -308,6 +330,24 @@ def _summary_cards(summary: Dict[str, Any], text: Dict[str, str]) -> str:
         f'<div class="card"><span>{escape(label)}</span><strong>{_format_int(value)}</strong></div>'
         for label, value in cards
     ) + "</div>"
+
+
+def _quality_title(lang: str) -> str:
+    return "Data Quality Warning" if lang == "en" else "数据质量警告"
+
+
+def _quality_warning(summary: Dict[str, Any], lang: str) -> str:
+    if lang == "en":
+        message = (
+            f"Damaged lines: {int(summary.get('damagedLineCount') or 0)}; "
+            f"invalid token events: {int(summary.get('invalidTokenEventCount') or 0)}."
+        )
+    else:
+        message = (
+            f"损坏行：{int(summary.get('damagedLineCount') or 0)}；"
+            f"无效 token 事件：{int(summary.get('invalidTokenEventCount') or 0)}。"
+        )
+    return f'<p class="empty">{escape(message)}</p>'
 
 
 def _token_mix_svg(summary: Dict[str, Any], text: Dict[str, str]) -> str:

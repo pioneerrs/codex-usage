@@ -181,6 +181,10 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["outputTokens"], 20)
         self.assertEqual(payload["summary"]["reasoningOutputTokens"], 3)
         self.assertEqual(payload["summary"]["totalTokens"], 220)
+        self.assertEqual(payload["summary"]["verifiedUsage"]["totalTokens"], 220)
+        self.assertEqual(payload["summary"]["unverifiedUsage"]["totalTokens"], 0)
+        self.assertIn("damagedLineCount", payload["summary"])
+        self.assertIn("invalidTokenEventCount", payload["summary"])
         self.assertEqual(payload["summary"]["secondaryUsedPercentLatest"], 11)
         self.assertEqual(sum(row["totalTokens"] for row in payload["timeline"]), 220)
 
@@ -201,6 +205,9 @@ class CliTests(unittest.TestCase):
         csv_text = Path("codex.csv").read_text(encoding="utf-8")
         self.assertIn("forkBaselineStatus", csv_text)
         self.assertIn("forkReplayTokensExcluded", csv_text)
+        self.assertIn("verifiedTotalTokens", csv_text)
+        self.assertIn("unverifiedTotalTokens", csv_text)
+        self.assertIn("damagedLineCount", csv_text)
 
         code, report, err = self.run_cli(
             "codex",
@@ -235,6 +242,9 @@ class CliTests(unittest.TestCase):
         self.assertIn("<svg", chart)
         self.assertIn("Cached Input", chart)
         self.assertIn("220", chart)
+        self.assertIn("Inclusive Total", chart)
+        self.assertIn("Verified Total", chart)
+        self.assertIn("Unverified Total", chart)
 
         code, out, err = self.run_cli(
             "codex",
@@ -272,6 +282,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("Codex API 等价费用估算", cost_chart)
         self.assertIn("<svg", cost_chart)
         self.assertIn("$0.00", cost_chart)
+        self.assertIn("Verified（已验证） API 等价金额", cost_chart)
+        self.assertIn("Unverified（未验证） API 等价金额", cost_chart)
 
         code, out, err = self.run_cli(
             "codex",
@@ -310,6 +322,14 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertIn("Codex Usage Summary", out)
         self.assertIn("not written", out)
+
+    def test_default_chart_paths_include_unique_generation_times(self):
+        first = cli._default_output_path("usage", "0716")
+        second = cli._default_output_path("usage", "0716")
+
+        self.assertNotEqual(first, second)
+        self.assertEqual(first.parent, Path("output"))
+        self.assertTrue(first.name.startswith("codex-usage-0716-"))
 
     def test_auto_language_uses_locale(self):
         self.run_cli("init")

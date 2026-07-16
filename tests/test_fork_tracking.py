@@ -77,11 +77,13 @@ class ForkTrackingTests(unittest.TestCase):
         self._write(day, "parent", [
             session_meta("2026-07-16T09:00:00+08:00", "parent"),
             turn_context("2026-07-16T09:00:01+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T09:20:00+08:00", 200, 185, 160, 15, 7),
             token_event("2026-07-16T09:30:00+08:00", 300, 280, 240, 20, 10),
         ])
         self._write(day, "child", [
             session_meta("2026-07-16T10:00:00+08:00", "child", "parent"),
             turn_context("2026-07-16T10:00:00.001+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T10:00:05+08:00", 200, 185, 160, 15, 7),
             token_event("2026-07-16T10:00:06+08:00", 300, 280, 240, 20, 10),
             turn_context("2026-07-16T10:05:00+08:00", "gpt-5.6-terra"),
             token_event("2026-07-16T10:05:05+08:00", 350, 325, 260, 25, 12),
@@ -90,15 +92,35 @@ class ForkTrackingTests(unittest.TestCase):
         report = self._report()
         summary = report["summary"]
         self.assertEqual(summary["totalTokens"], 350)
-        self.assertEqual(summary["tokenEventCount"], 2)
+        self.assertEqual(summary["tokenEventCount"], 3)
         self.assertEqual(summary["forkSessionCount"], 1)
         self.assertEqual(summary["resolvedForkCount"], 1)
         self.assertEqual(summary["unresolvedForkCount"], 0)
         self.assertEqual(summary["forkReplayTokensExcluded"], 300)
+        self.assertEqual(summary["verifiedUsage"]["totalTokens"], 350)
+        self.assertEqual(summary["unverifiedUsage"]["totalTokens"], 0)
+        self.assertEqual(summary["ambiguousForkCount"], 0)
+        self.assertEqual(summary["notReplayedForkCount"], 0)
         self.assertEqual(sum(row["totalTokens"] for row in report["timeline"]), 350)
         self.assertEqual(sum(row["totalTokens"] for row in summary["byModel"].values()), 350)
         self.assertEqual(summary["byModel"]["gpt-5.6-sol"]["totalTokens"], 300)
         self.assertEqual(summary["byModel"]["gpt-5.6-terra"]["totalTokens"], 50)
+        additive_audit_fields = {
+            "verifiedUsage",
+            "unverifiedUsage",
+            "usageConfidence",
+            "ambiguousForkCount",
+            "notReplayedForkCount",
+            "damagedLineCount",
+            "invalidTokenEventCount",
+            "counterResetCount",
+            "counterAnomalyCount",
+        }
+        self.assertTrue(additive_audit_fields.issubset(summary))
+        self.assertTrue(additive_audit_fields.issubset(report["timeline"][0]))
+        self.assertTrue(
+            additive_audit_fields.issubset(summary["byModel"]["gpt-5.6-sol"])
+        )
 
         child = next(row for row in report["sessions"] if row["sessionFile"] == "child.jsonl")
         self.assertEqual(child["forkedFromId"], "parent")
@@ -106,36 +128,45 @@ class ForkTrackingTests(unittest.TestCase):
         self.assertEqual(child["forkReplayTokensExcluded"], 300)
         self.assertEqual(child["tokenEvents"], 1)
         self.assertEqual(child["totalTokens"], 50)
+        self.assertEqual(child["verifiedUsage"]["totalTokens"], 50)
+        self.assertEqual(child["unverifiedUsage"]["totalTokens"], 0)
+        self.assertEqual(child["usageConfidence"], "verified")
         self.assertEqual(child["primaryUsedPercentLatest"], 50)
+        self.assertTrue(additive_audit_fields.issubset(child))
 
     def test_sibling_nested_and_pure_replay_forks(self):
         day = datetime(2026, 7, 16, tzinfo=SHANGHAI)
         self._write(day, "parent", [
             session_meta("2026-07-16T08:00:00+08:00", "parent"),
             turn_context("2026-07-16T08:00:01+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T08:05:00+08:00", 80),
             token_event("2026-07-16T08:10:00+08:00", 100),
         ])
         self._write(day, "sibling-a", [
             session_meta("2026-07-16T09:00:00+08:00", "sibling-a", "parent"),
             turn_context("2026-07-16T09:00:00.001+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T09:00:00.001500+08:00", 80),
             token_event("2026-07-16T09:00:00.002+08:00", 100),
             token_event("2026-07-16T09:10:00+08:00", 130),
         ])
         self._write(day, "sibling-b", [
             session_meta("2026-07-16T09:30:00+08:00", "sibling-b", "parent"),
             turn_context("2026-07-16T09:30:00.001+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T09:30:00.001500+08:00", 80),
             token_event("2026-07-16T09:30:00.002+08:00", 100),
             token_event("2026-07-16T09:40:00+08:00", 140),
         ])
         self._write(day, "nested", [
             session_meta("2026-07-16T10:00:00+08:00", "nested", "sibling-a"),
             turn_context("2026-07-16T10:00:00.001+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T10:00:00.001500+08:00", 100),
             token_event("2026-07-16T10:00:00.002+08:00", 130),
             token_event("2026-07-16T10:10:00+08:00", 150),
         ])
         self._write(day, "pure-copy", [
             session_meta("2026-07-16T11:00:00+08:00", "pure-copy", "parent"),
             turn_context("2026-07-16T11:00:00.001+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T11:00:00.001500+08:00", 80),
             token_event("2026-07-16T11:00:00.002+08:00", 100),
         ])
 
@@ -152,11 +183,13 @@ class ForkTrackingTests(unittest.TestCase):
         self._write(parent_day, "parent", [
             session_meta("2026-07-15T20:00:00+08:00", "parent"),
             turn_context("2026-07-15T20:00:01+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-15T20:05:00+08:00", 350),
             token_event("2026-07-15T20:10:00+08:00", 400),
         ])
         self._write(parent_day, "child", [
             session_meta("2026-07-15T21:00:00+08:00", "child", "parent"),
             turn_context("2026-07-15T21:00:00.001+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-15T21:00:00.001500+08:00", 350),
             token_event("2026-07-15T21:00:00.002+08:00", 400),
             token_event("2026-07-16T08:00:00+08:00", 460),
         ])
@@ -166,6 +199,34 @@ class ForkTrackingTests(unittest.TestCase):
         self.assertEqual(report["summary"]["forkSessionCount"], 1)
         self.assertEqual(report["summary"]["resolvedForkCount"], 1)
         self.assertEqual(report["summary"]["forkReplayTokensExcluded"], 0)
+
+    def test_archived_parent_is_available_for_fork_resolution(self):
+        day = datetime(2026, 7, 16, tzinfo=SHANGHAI)
+        archived = self.codex_home / "archived_sessions"
+        archived.mkdir(parents=True)
+        parent_lines = [
+            session_meta("2026-07-16T08:00:00+08:00", "archived-parent"),
+            turn_context("2026-07-16T08:00:01+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T08:05:00+08:00", 100),
+            token_event("2026-07-16T08:10:00+08:00", 200),
+        ]
+        (archived / "archived-parent.jsonl").write_text(
+            "\n".join(json.dumps(line) for line in parent_lines) + "\n", encoding="utf-8"
+        )
+        self._write(day, "child", [
+            session_meta("2026-07-16T09:00:00+08:00", "child", "archived-parent"),
+            turn_context("2026-07-16T09:00:00.001+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T09:00:01+08:00", 100),
+            token_event("2026-07-16T09:00:02+08:00", 200),
+            token_event("2026-07-16T09:05:00+08:00", 230),
+        ])
+
+        report = self._report()
+
+        child = next(row for row in report["sessions"] if row["sessionFile"] == "child.jsonl")
+        self.assertEqual(child["forkBaselineStatus"], "resolved")
+        self.assertEqual(child["totalTokens"], 30)
+        self.assertEqual(report["summary"]["resolvedForkCount"], 1)
 
     def test_old_format_without_replay_is_counted_normally(self):
         day = datetime(2026, 7, 16, tzinfo=SHANGHAI)
@@ -187,7 +248,7 @@ class ForkTrackingTests(unittest.TestCase):
         self.assertEqual(report["summary"]["totalTokens"], 340)
         self.assertEqual(report["summary"]["unresolvedForkCount"], 0)
 
-    def test_missing_parent_and_mismatched_early_replay_are_unresolved(self):
+    def test_missing_parent_is_unresolved_and_lower_counter_is_not_replayed(self):
         day = datetime(2026, 7, 16, tzinfo=SHANGHAI)
         self._write(day, "parent", [
             session_meta("2026-07-16T08:00:00+08:00", "parent"),
@@ -208,13 +269,138 @@ class ForkTrackingTests(unittest.TestCase):
         ])
 
         report = self._report()
-        self.assertEqual(report["summary"]["unresolvedForkCount"], 2)
+        self.assertEqual(report["summary"]["unresolvedForkCount"], 1)
+        self.assertEqual(report["summary"]["notReplayedForkCount"], 1)
         self.assertEqual(report["summary"]["resolvedForkCount"], 0)
         self.assertEqual(report["summary"]["totalTokens"], 850)
         statuses = {row["sessionFile"]: row["forkBaselineStatus"] for row in report["sessions"]}
         self.assertEqual(statuses["missing-parent.jsonl"], "unresolved")
-        self.assertEqual(statuses["mismatch.jsonl"], "unresolved")
+        self.assertEqual(statuses["mismatch.jsonl"], "not_replayed")
         self.assertIn("Warning: unresolved forks", render_codex_report(report, lang="en"))
+
+    def test_single_baseline_match_is_ambiguous_with_dual_totals(self):
+        day = datetime(2026, 7, 16, tzinfo=SHANGHAI)
+        self._write(day, "parent", [
+            session_meta("2026-07-16T08:00:00+08:00", "parent"),
+            turn_context("2026-07-16T08:00:01+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T08:10:00+08:00", 100),
+        ])
+        self._write(day, "ambiguous-child", [
+            session_meta("2026-07-16T09:00:00+08:00", "ambiguous-child", "parent"),
+            turn_context("2026-07-16T09:00:00.001+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T09:00:00.002+08:00", 100),
+            token_event("2026-07-16T09:10:00+08:00", 130),
+        ])
+
+        report = self._report()
+        summary = report["summary"]
+        child = next(row for row in report["sessions"] if row["sessionFile"] == "ambiguous-child.jsonl")
+        self.assertEqual(child["forkBaselineStatus"], "ambiguous")
+        self.assertEqual(summary["totalTokens"], 230)
+        self.assertEqual(summary["verifiedUsage"]["totalTokens"], 130)
+        self.assertEqual(summary["unverifiedUsage"]["totalTokens"], 100)
+        self.assertEqual(summary["ambiguousForkCount"], 1)
+        self.assertEqual(child["usageConfidence"], "unverified")
+
+    def test_future_created_fork_is_completely_excluded(self):
+        day = datetime(2026, 7, 16, tzinfo=SHANGHAI)
+        self._write(day, "parent", [
+            session_meta("2026-07-16T08:00:00+08:00", "parent"),
+            turn_context("2026-07-16T08:00:01+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T08:10:00+08:00", 100),
+        ])
+        self._write(day, "future-child", [
+            session_meta("2026-07-17T09:00:00+08:00", "future-child", "parent"),
+            turn_context("2026-07-16T10:00:00+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T10:00:01+08:00", 500),
+        ])
+
+        report = self._report()
+        self.assertEqual(report["summary"]["totalTokens"], 100)
+        self.assertEqual(report["summary"]["forkSessionCount"], 0)
+        self.assertNotIn(
+            "future-child.jsonl", {row["sessionFile"] for row in report["sessions"]}
+        )
+
+    def test_precreation_events_are_not_child_usage(self):
+        day = datetime(2026, 7, 16, tzinfo=SHANGHAI)
+        self._write(day, "parent", [
+            session_meta("2026-07-16T08:00:00+08:00", "parent"),
+            turn_context("2026-07-16T08:00:01+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T08:10:00+08:00", 100),
+        ])
+        self._write(day, "child", [
+            session_meta("2026-07-16T10:00:00+08:00", "child", "parent"),
+            turn_context("2026-07-16T09:59:00+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T09:59:01+08:00", 900),
+            token_event("2026-07-16T10:05:00+08:00", 40),
+        ])
+
+        report = self._report()
+        child = next(row for row in report["sessions"] if row["sessionFile"] == "child.jsonl")
+        self.assertEqual(child["forkBaselineStatus"], "not_replayed")
+        self.assertEqual(child["totalTokens"], 40)
+        self.assertEqual(child["forkReplayTokensExcluded"], 900)
+        self.assertEqual(report["summary"]["totalTokens"], 140)
+
+    def test_missing_parent_uses_first_postcreation_snapshot_as_verified_baseline(self):
+        day = datetime(2026, 7, 16, tzinfo=SHANGHAI)
+        self._write(day, "child", [
+            session_meta("2026-07-16T09:00:00+08:00", "child", "absent"),
+            turn_context("2026-07-16T09:00:00.001+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T09:00:01+08:00", 200),
+            token_event("2026-07-16T09:05:00+08:00", 230),
+        ])
+
+        report = self._report()
+        child = report["sessions"][0]
+        self.assertEqual(child["forkBaselineStatus"], "unresolved")
+        self.assertEqual(child["totalTokens"], 230)
+        self.assertEqual(child["verifiedUsage"]["totalTokens"], 30)
+        self.assertEqual(child["unverifiedUsage"]["totalTokens"], 200)
+        self.assertEqual(
+            sum(row["verifiedUsage"]["totalTokens"] for row in report["timeline"]), 30
+        )
+        self.assertEqual(
+            sum(
+                row["verifiedUsage"]["totalTokens"]
+                for row in report["summary"]["byModel"].values()
+            ),
+            30,
+        )
+
+    def test_model_filter_applies_to_fork_audit_and_replay_exclusion(self):
+        day = datetime(2026, 7, 16, tzinfo=SHANGHAI)
+        self._write(day, "parent", [
+            session_meta("2026-07-16T08:00:00+08:00", "parent"),
+            turn_context("2026-07-16T08:00:01+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T08:05:00+08:00", 200),
+            token_event("2026-07-16T08:10:00+08:00", 300),
+        ])
+        self._write(day, "child", [
+            session_meta("2026-07-16T09:00:00+08:00", "child", "parent"),
+            turn_context("2026-07-16T09:00:00.001+08:00", "gpt-5.6-sol"),
+            token_event("2026-07-16T09:00:01+08:00", 200),
+            token_event("2026-07-16T09:00:02+08:00", 300),
+            turn_context("2026-07-16T09:05:00+08:00", "gpt-5.6-terra"),
+            token_event("2026-07-16T09:05:01+08:00", 350),
+        ])
+        start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = day.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        terra = aggregate_codex_logs(
+            start, end, codex_home=self.codex_home, model_filter="gpt-5.6-terra"
+        )["summary"]
+        absent = aggregate_codex_logs(
+            start, end, codex_home=self.codex_home, model_filter="gpt-5.6-luna"
+        )["summary"]
+
+        self.assertEqual(terra["totalTokens"], 50)
+        self.assertEqual(terra["forkSessionCount"], 1)
+        self.assertEqual(terra["forkReplayTokensExcluded"], 0)
+        self.assertEqual(absent["totalTokens"], 0)
+        self.assertEqual(absent["forkSessionCount"], 0)
+        self.assertEqual(absent["forkReplayTokensExcluded"], 0)
 
 
 if __name__ == "__main__":

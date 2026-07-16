@@ -40,6 +40,8 @@ macOS、Linux 或 WSL：
 ./run.sh
 ```
 
+仓库通过 `.gitattributes` 强制 shell 和 Python launcher 使用 LF，因此 Windows checkout 也可以直接从 WSL 执行。
+
 Windows PowerShell：
 
 ```powershell
@@ -179,7 +181,9 @@ Windows：
 %USERPROFILE%\.codex\archived_sessions\*.jsonl
 ```
 
-`codex` 命令会读取这些文件里的 `token_count` 事件。Fork 子会话可能复制父会话的累计计数器前缀；只有五个 token 字段与 fork 时刻父会话最后一条记录完全一致时，工具才会排除这段继承前缀，并同步从 session、事件数、时间线、限额快照和按模型汇总中移除。父日志缺失或计数不匹配时不会猜测扣减，而会标记为 `unresolved`。
+`codex` 命令只读取这些文件里的 `session_meta`、`turn_context` 模型字段、`token_count` 和 `rate_limits`。Token 差值严格按文件行号顺序计算；时间戳只用于时间窗口筛选和 timeline 分桶。累计总数回退会开始一个新计数段，只有组件回退则钳为 0 并计入审计字段。
+
+Fork 子会话可能复制父会话的累计计数器前缀。只有至少两个连续子 usage 快照构成父 usage 序列的后缀并抵达 fork 时刻 baseline，才标记为 `resolved`。首个计数明显较小时标记 `not_replayed`，证据不完整时标记 `ambiguous`，父日志或 baseline 缺失时标记 `unresolved`。原有 token 和费用字段继续表示 inclusive 上限；新增 `verifiedUsage` / verified 费用表示已确认下限，`unverifiedUsage` 表示两者的非负差额。与所选窗口有关的文件中，损坏的统计 JSONL 行和无效 token 事件会被跳过、计数并显示数据质量警告，不会输出原始行内容。
 
 如果 Codex home 不在默认位置：
 
@@ -202,7 +206,7 @@ codex-usage codex cost-chart --today --lang zh --output cost.html
 
 图表命令会生成一个静态 HTML 文件，图表使用内联 SVG，不需要 Node.js、浏览器服务或外部 CDN。
 
-`summary` 会同时输出 token、费用、限额和重点 session，并默认将图表保存到 `output/` 目录。文件名包含时间戳以防止覆盖（例如 `codex-usage-20260603-064255.html`）。如果只想看终端报告：
+`summary` 会同时输出 Inclusive、Verified、Unverified token/费用、限额和重点 session，并默认将图表保存到 `output/` 目录。文件名包含统计周期、生成时间和唯一后缀以防止覆盖（例如 `codex-usage-0716-20260717-103000-123456-a1b2c3d4.html`）。如果只想看终端报告：
 
 ```bash
 codex-usage codex summary --today --lang zh --no-charts
@@ -224,10 +228,14 @@ codex-usage codex cost-chart --today --lang zh --output cost.html
 gpt-5.6、gpt-5.6-sol: $5 / $0.5 / $30
 gpt-5.6-terra:        $2.5 / $0.25 / $15
 gpt-5.6-luna:         $1 / $0.1 / $6
+gpt-5.3-codex:        $1.75 / $0.175 / $14
+gpt-5.2:              $1.75 / $0.175 / $14
 Codex Credits = API 等价美元 x 25
 ```
 
-未知模型会回退到 GPT-5.5 费率，并在终端和 JSON 中列出。需要统一覆盖所有模型费率时，使用 `--flat-rate` 和以下参数：
+`gpt-5.3-codex-spark` 当前按“未定价”处理，回退到 GPT-5.5 并发出警告；其他未知模型也使用 GPT-5.5 fallback。`codex-auto-review` 保留仓库内部费率并明确标记来源。JSON 会输出 `rateCardStatus`、`rateCardSource`、`rateCardAsOf`；`--flat-rate` 标记为 `user-supplied`。
+
+需要统一覆盖所有模型费率时，使用 `--flat-rate` 和以下参数：
 
 ```bash
 codex-usage codex cost --today \
@@ -237,7 +245,7 @@ codex-usage codex cost --today \
   --credits-per-usd 25
 ```
 
-这里有四种不同指标：token 用量是本地日志计数；API 等价美元按上表换算；Codex Credits 按 `--credits-per-usd` 换算（默认 `25`）；订阅限额则是日志中观察到的 primary / secondary 百分比。美元和 Credits 都不代表订阅真实账单。Reasoning token 已包含在 output 中，不重复计费。本工具有意不实现仅适用于 API 的长上下文、Priority 或 Fast 模式倍率。
+这里有四种不同指标：token 用量是本地日志计数；API 等价美元按上表换算；Codex Credits 按 `--credits-per-usd` 换算（默认 `25`）；订阅限额则是日志中观察到的 primary / secondary 百分比。Inclusive、Verified、Unverified Credits 都严格等于对应美元值乘以 `creditsPerUSD`。美元和 Credits 都不代表订阅真实账单。Reasoning token 已包含在 output 中，不重复计费。本工具有意不实现仅适用于 API 的长上下文、Priority 或 Fast 模式倍率。
 
 ## 常见问题
 

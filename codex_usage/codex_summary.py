@@ -12,6 +12,7 @@ TEXT = {
         "title": "Codex Usage Summary",
         "fork_audit": "Fork replay audit: {forks} forks, {resolved} resolved, {unresolved} unresolved, {excluded} inherited tokens excluded.",
         "unknown_warning": "Warning: unknown model(s) {models} used the fallback rate card.",
+        "unpriced_warning": "Warning: unpriced model(s) {models} used the fallback rate card.",
         "window": "Window",
         "source": "Source",
         "overview": "Overview",
@@ -53,10 +54,14 @@ TEXT = {
         "note_estimate": "Token values come from local Codex token_count logs. Cost is an API-equivalent estimate, not a subscription bill.",
         "note_reasoning": "Reasoning tokens are already included in output tokens and are not charged again.",
         "note_window": "Session duration is measured only inside the selected report window.",
+        "inclusive": "Inclusive",
+        "verified": "Verified",
+        "unverified": "Unverified",
     },
     "zh": {
         "fork_audit": "Fork 继承审计：{forks} 个 fork，{resolved} 个已解析，{unresolved} 个无法解析，排除 {excluded} 个继承 token。",
         "unknown_warning": "警告：未知模型 {models} 使用了默认费率。",
+        "unpriced_warning": "警告：未定价模型 {models} 使用了 fallback 费率。",
         "title": "Codex 用量总览",
         "window": "时间窗口",
         "source": "数据来源",
@@ -99,6 +104,9 @@ TEXT = {
         "note_estimate": "Token 数值来自本机 Codex token_count 日志。费用是 API 等价估算，不代表订阅真实账单。",
         "note_reasoning": "Reasoning token 已包含在 output token 中，不重复计费。",
         "note_window": "Session 活跃时长只按当前统计窗口内的首尾事件估算。",
+        "inclusive": "Inclusive（含不确定量）",
+        "verified": "Verified（已验证）",
+        "unverified": "Unverified（未验证）",
     },
 }
 
@@ -113,6 +121,7 @@ def build_codex_summary(
         "usage": usage_report["summary"],
         "cost": cost_report["summary"],
         "unknownModels": cost_report.get("unknownModels") or [],
+        "unpricedModels": cost_report.get("unpricedModels") or [],
         "hotSessions": _hot_sessions(usage_report.get("sessions") or []),
         "charts": {
             "usage": usage_chart_path,
@@ -141,10 +150,22 @@ def render_codex_summary(summary: Dict[str, Any], lang: str = "en") -> str:
             excluded=_format_int(usage.get("forkReplayTokensExcluded")),
         ),
         text["overview"],
+        f"{text['inclusive']}: {_format_int(usage.get('totalTokens'))} / {_format_money(cost.get('totalCostUSD') or 0.0)} / {_format_credits(cost.get('totalCredits') or 0.0)} credits",
+        f"{text['verified']}: {_format_int((usage.get('verifiedUsage') or usage).get('totalTokens'))} / {_format_money(cost.get('verifiedCostUSD') or 0.0)} / {_format_credits(cost.get('verifiedCredits') or 0.0)} credits",
+        f"{text['unverified']}: {_format_int((usage.get('unverifiedUsage') or {}).get('totalTokens'))} / {_format_money(cost.get('unverifiedCostUSD') or 0.0)} / {_format_credits(cost.get('unverifiedCredits') or 0.0)} credits",
     ]
     unknown_models = summary.get("unknownModels") or []
     if unknown_models:
-        lines.insert(-1, text["unknown_warning"].format(models=", ".join(unknown_models)))
+        lines.insert(
+            lines.index(text["overview"]),
+            text["unknown_warning"].format(models=", ".join(unknown_models)),
+        )
+    unpriced_models = summary.get("unpricedModels") or []
+    if unpriced_models:
+        lines.insert(
+            lines.index(text["overview"]),
+            text["unpriced_warning"].format(models=", ".join(unpriced_models)),
+        )
     lines.extend(
         render_table(
             [text["total_tokens"], text["cached_input"], text["non_cached_input"], text["output"], text["reasoning"], text["api_cost"], text["credits"]],

@@ -804,6 +804,12 @@ codex-usage codex export --date 2026-05-10 --format csv --output codex-logs.csv
 - total tokens
 - primary / secondary rate-limit used percent
 
-时间窗口统计按每个 session 的累计 `token_count` 做差值，不重复累加中间事件。
+时间窗口统计按文件行号顺序把每个有效累计 `token_count` 规范化为唯一 delta；时间戳只负责窗口筛选和 timeline 分桶。累计总数回退视为 reset，新段首事件按当前累计值计入；完全重复快照产生 0 delta 但仍计入有效事件数。session、timeline、byModel、模型过滤和费用统一消费这条 delta 流。
 
-图表报告生成静态 HTML 文件，使用内联 SVG，不依赖 Node.js、浏览器服务或外部 CDN。
+Fork 审计状态为 `resolved`、`not_replayed`、`ambiguous`、`unresolved`。`resolved` 要求至少两个连续子 usage 快照与父 usage 序列后缀一致并抵达 fork baseline。原有平铺 token/费用字段保持 inclusive 兼容口径；`verifiedUsage`、`unverifiedUsage`、verified/unverified 费用和 Credits 均为 additive 字段。CSV 保留旧列和 `TOTAL` 行，并追加平铺 verified/unverified 与数据质量审计列。
+
+与所选窗口有关的文件中，损坏的统计 JSONL 行、无效 UTF-8、无效 token 结构和无法解析的 token 时间戳会容错跳过，分别累计 `damagedLineCount` / `invalidTokenEventCount`，但绝不输出原始行正文。0% rate-limit 快照是合法值。日期边界使用本地 IANA 时区按目标日期转换，支持 DST 的 23/25 小时日期。
+
+费用输出通过 `rateCardStatus`、`rateCardSource`、`rateCardAsOf` 区分官方费率、仓库内部别名、未知/未定价 fallback 和用户提供的 flat rate。API 等价费用、Credits 换算和订阅限额是三个不同概念。
+
+图表报告生成静态 HTML 文件，使用内联 SVG，不依赖 Node.js、浏览器服务或外部 CDN。默认文件名包含统计周期、生成时间和唯一后缀，避免同一周期重复生成时覆盖。

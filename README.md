@@ -40,6 +40,8 @@ macOS, Linux, or WSL:
 ./run.sh
 ```
 
+The repository enforces LF line endings for shell and Python launchers so a Windows checkout remains executable from WSL.
+
 Windows PowerShell:
 
 ```powershell
@@ -180,7 +182,9 @@ Windows:
 %USERPROFILE%\.codex\archived_sessions\*.jsonl
 ```
 
-The `codex` commands read `token_count` events from these files. Forked sessions can contain a copied prefix of the parent's cumulative counters. When all five token fields exactly match the parent's last counter at fork time, that inherited prefix is excluded from sessions, events, timelines, rate-limit snapshots, and per-model totals. Missing parents or mismatched copied counters are left uncorrected and reported as unresolved instead of being guessed.
+The `codex` commands read `session_meta`, `turn_context` model fields, `token_count`, and `rate_limits` from these files. Token deltas follow file line order; timestamps only select the reporting window and timeline bucket. Counter resets begin a new cumulative segment, while component-only regressions are clamped and audited.
+
+Forked sessions can contain a copied prefix of the parent's cumulative counters. A fork is `resolved` only when at least two consecutive child usage snapshots form a suffix of the parent's usage sequence and reach the fork-time baseline. Smaller first counters are `not_replayed`; incomplete evidence is `ambiguous`; missing parents or baselines are `unresolved`. Existing token and cost fields are the inclusive upper estimate. Additive `verifiedUsage` / verified-cost fields provide the confirmed lower estimate, and `unverifiedUsage` is their non-negative difference. Damaged statistical JSONL lines and invalid token events in files relevant to the selected window are skipped, counted, and shown as data-quality warnings without exposing line contents.
 
 If your Codex home is elsewhere:
 
@@ -203,7 +207,7 @@ codex-usage codex cost-chart --today --output cost.html
 
 The chart command writes a static HTML file with inline SVG charts. It does not require Node.js, a browser server, or external CDN assets.
 
-`summary` prints token, cost, rate-limit, and hot-session highlights and writes usage and cost charts to the `output/` directory by default. Files are named with timestamps to prevent overwriting (e.g., `codex-usage-20260603-064255.html`). Terminal-only output:
+`summary` prints inclusive, verified, and unverified token/cost totals plus rate-limit and hot-session highlights. It writes usage and cost charts to the `output/` directory by default. Files include the period, generation timestamp, and a unique suffix to prevent overwriting (for example, `codex-usage-0716-20260717-103000-123456-a1b2c3d4.html`). Terminal-only output:
 
 ```bash
 codex-usage codex summary --today --no-charts
@@ -225,10 +229,14 @@ When model tracking is available, cost estimates use these API-equivalent rate c
 gpt-5.6, gpt-5.6-sol:  $5 / $0.5 / $30
 gpt-5.6-terra:         $2.5 / $0.25 / $15
 gpt-5.6-luna:          $1 / $0.1 / $6
+gpt-5.3-codex:         $1.75 / $0.175 / $14
+gpt-5.2:               $1.75 / $0.175 / $14
 Codex Credits = API-equivalent USD x 25
 ```
 
-Unknown models use the GPT-5.5 fallback rate card and are listed in terminal and JSON output. Use `--flat-rate` with the rate flags to override per-model pricing:
+`gpt-5.3-codex-spark` is treated as unpriced and uses the GPT-5.5 fallback with a warning; other unknown models use the same fallback. `codex-auto-review` keeps the repository-internal rate card and is labeled accordingly. JSON exposes `rateCardStatus`, `rateCardSource`, and `rateCardAsOf`; `--flat-rate` is labeled `user-supplied`.
+
+Use `--flat-rate` with the rate flags to override per-model pricing:
 
 ```bash
 codex-usage codex cost --today \
@@ -238,7 +246,7 @@ codex-usage codex cost --today \
   --credits-per-usd 25
 ```
 
-These are four separate metrics: token usage is the local log count; API-equivalent USD applies the table above; Codex Credits are an equivalent conversion using `--credits-per-usd` (default `25`); subscription limits are the observed primary/secondary percentages. Neither USD nor Credits is a subscription bill. Reasoning tokens are already included in output tokens and are not billed again. The estimator intentionally does not apply API-only long-context, Priority, or Fast-mode multipliers.
+These are four separate metrics: token usage is the local log count; API-equivalent USD applies the table above; Codex Credits are an equivalent conversion using `--credits-per-usd` (default `25`); subscription limits are the observed primary/secondary percentages. Inclusive, verified, and unverified Credits always equal their corresponding USD value times `creditsPerUSD`. Neither USD nor Credits is a subscription bill. Reasoning tokens are already included in output tokens and are not billed again. The estimator intentionally does not apply API-only long-context, Priority, or Fast-mode multipliers.
 
 ## Troubleshooting
 

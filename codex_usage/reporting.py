@@ -8,8 +8,12 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set
 
+from tzlocal import get_localzone
+
 from .errors import UsageError
 
+
+LOCAL_TIMEZONE = get_localzone()
 
 DISCLAIMER_EN = (
     "All token values are estimated from locally visible text. "
@@ -119,7 +123,7 @@ def parse_datetime_filter(value: Optional[str], end_of_day: bool = False) -> Opt
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
             parsed_date = date.fromisoformat(value)
             parsed_time = time.max if end_of_day else time.min
-            return datetime.combine(parsed_date, parsed_time).astimezone()
+            return datetime.combine(parsed_date, parsed_time, tzinfo=LOCAL_TIMEZONE)
         return _normalize_datetime(datetime.fromisoformat(value))
     except ValueError:
         raise UsageError(
@@ -140,13 +144,13 @@ def parse_since(value: Optional[str]) -> Optional[datetime]:
         "h": timedelta(hours=amount),
         "m": timedelta(minutes=amount),
     }[unit]
-    return datetime.now().astimezone() - delta
+    return datetime.now(LOCAL_TIMEZONE) - delta
 
 
 def parse_record_timestamp(record: Dict[str, Any]) -> datetime:
     value = record.get("timestamp") or record.get("createdAt")
     if not value:
-        return datetime.min.replace(tzinfo=datetime.now().astimezone().tzinfo)
+        return datetime.min.replace(tzinfo=LOCAL_TIMEZONE)
     try:
         return _normalize_datetime(datetime.fromisoformat(value))
     except ValueError:
@@ -155,8 +159,8 @@ def parse_record_timestamp(record: Dict[str, Any]) -> datetime:
 
 def _normalize_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.astimezone()
-    return value
+        return value.replace(tzinfo=LOCAL_TIMEZONE)
+    return value.astimezone(LOCAL_TIMEZONE)
 
 
 def aggregate_rows(

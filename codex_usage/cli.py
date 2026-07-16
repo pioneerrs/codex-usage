@@ -172,7 +172,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         "-o",
         default=None,
-        help="Output HTML file. Defaults to output/codex-usage-{period}.html.",
+        help="Output HTML file. Defaults to a timestamped file under output/.",
     )
     codex_chart.set_defaults(func=cmd_codex_chart)
 
@@ -193,7 +193,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         "-o",
         default=None,
-        help="Output HTML file. Defaults to output/codex-cost-{period}.html.",
+        help="Output HTML file. Defaults to a timestamped file under output/.",
     )
     codex_cost_chart.set_defaults(func=cmd_codex_cost_chart)
 
@@ -206,12 +206,12 @@ def build_parser() -> argparse.ArgumentParser:
     codex_summary.add_argument(
         "--usage-output",
         default=None,
-        help="Usage chart HTML output. Defaults to output/codex-usage-{period}.html.",
+        help="Usage chart HTML output. Defaults to a timestamped file under output/.",
     )
     codex_summary.add_argument(
         "--cost-output",
         default=None,
-        help="Cost chart HTML output. Defaults to output/codex-cost-{period}.html.",
+        help="Cost chart HTML output. Defaults to a timestamped file under output/.",
     )
     codex_summary.add_argument(
         "--no-charts",
@@ -245,7 +245,7 @@ def add_codex_log_filters(parser: argparse.ArgumentParser, include_lang: bool = 
     date_group.add_argument("--since", help='Relative time filter, such as "7d", "12h", or "30m".')
     parser.add_argument("--from", dest="from_value", help="Start date, YYYY-MM-DD or ISO timestamp.")
     parser.add_argument("--to", dest="to_value", help="End date, YYYY-MM-DD or ISO timestamp.")
-    parser.add_argument("--model", default=None, help="Only include sessions for this model (e.g., gpt-5.5, gpt-5.4-mini).")
+    parser.add_argument("--model", default=None, help="Only include token deltas attributed to this model.")
     parser.add_argument("--codex-home", default=str(default_codex_home()), help="Codex home directory.")
     parser.add_argument(
         "--no-archived",
@@ -642,8 +642,9 @@ def _derive_period_tag(args: argparse.Namespace) -> str:
 
 
 def _default_output_path(chart_type: str, period: str) -> Path:
-    """Build the default output path: output/codex-{type}-{period}.html"""
-    filename = f"codex-{chart_type}-{period}.html"
+    """Build a timestamped default path so repeated reports do not overwrite."""
+    generated = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-%f")
+    filename = f"codex-{chart_type}-{period}-{generated}-{uuid.uuid4().hex[:8]}.html"
     return Path("output") / filename
 
 

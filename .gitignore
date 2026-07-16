@@ -1,4 +1,5 @@
 .codex-usage/
+.workbuddy/
 .venv/
 __pycache__/
 *.py[cod]
