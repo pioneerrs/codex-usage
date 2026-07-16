@@ -17,3 +17,4 @@ codex-cost.html
 codex-cost-*.html
 long-task-usage-*.html
 codex-logs.csv
+output/

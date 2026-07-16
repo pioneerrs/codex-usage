@@ -179,7 +179,7 @@ Windows：
 %USERPROFILE%\.codex\archived_sessions\*.jsonl
 ```
 
-`codex` 命令会读取这些文件里的 `token_count` 事件。
+`codex` 命令会读取这些文件里的 `token_count` 事件。Fork 子会话可能复制父会话的累计计数器前缀；只有五个 token 字段与 fork 时刻父会话最后一条记录完全一致时，工具才会排除这段继承前缀，并同步从 session、事件数、时间线、限额快照和按模型汇总中移除。父日志缺失或计数不匹配时不会猜测扣减，而会标记为 `unresolved`。
 
 如果 Codex home 不在默认位置：
 
@@ -202,11 +202,13 @@ codex-usage codex cost-chart --today --lang zh --output cost.html
 
 图表命令会生成一个静态 HTML 文件，图表使用内联 SVG，不需要 Node.js、浏览器服务或外部 CDN。
 
-`summary` 会同时输出 token、费用、限额和重点 session，并默认写入 `codex-usage.html` 与 `codex-cost.html`。如果只想看终端报告：
+`summary` 会同时输出 token、费用、限额和重点 session，并默认将图表保存到 `output/` 目录。文件名包含时间戳以防止覆盖（例如 `codex-usage-20260603-064255.html`）。如果只想看终端报告：
 
 ```bash
 codex-usage codex summary --today --lang zh --no-charts
 ```
+
+**输出目录**：所有 HTML 图表默认保存到 `output/` 目录。每个文件名都包含时间戳，防止覆盖之前的结果。你仍然可以使用 `--output` 参数指定自定义输出路径。
 
 ## 费用估算
 
@@ -216,16 +218,16 @@ codex-usage codex cost --today --lang zh --json
 codex-usage codex cost-chart --today --lang zh --output cost.html
 ```
 
-费用估算默认按 GPT-5.5 口径折算：
+能够追踪模型时，费用估算会使用以下 API 等价费率（依次为非缓存 input / cached input / output，单位为每百万 token 的美元）：
 
 ```text
-非缓存 input: $5 / 1M tokens
-cached input: $0.5 / 1M tokens
-output: $30 / 1M tokens
-Codex credits: 25 credits / $1
+gpt-5.6、gpt-5.6-sol: $5 / $0.5 / $30
+gpt-5.6-terra:        $2.5 / $0.25 / $15
+gpt-5.6-luna:         $1 / $0.1 / $6
+Codex Credits = API 等价美元 x 25
 ```
 
-如果模型或 rate card 变化，可以传入：
+未知模型会回退到 GPT-5.5 费率，并在终端和 JSON 中列出。需要统一覆盖所有模型费率时，使用 `--flat-rate` 和以下参数：
 
 ```bash
 codex-usage codex cost --today \
@@ -235,7 +237,7 @@ codex-usage codex cost --today \
   --credits-per-usd 25
 ```
 
-费用结果是基于本机 Codex `token_count` 日志的 API 等价估算，不代表订阅真实账单。Reasoning token 只做展示，已经包含在 output 口径中，不重复计费。
+这里有四种不同指标：token 用量是本地日志计数；API 等价美元按上表换算；Codex Credits 按 `--credits-per-usd` 换算（默认 `25`）；订阅限额则是日志中观察到的 primary / secondary 百分比。美元和 Credits 都不代表订阅真实账单。Reasoning token 已包含在 output 中，不重复计费。本工具有意不实现仅适用于 API 的长上下文、Priority 或 Fast 模式倍率。
 
 ## 常见问题
 

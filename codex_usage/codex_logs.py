@@ -19,9 +19,16 @@ TOKEN_KEYS = (
     "total_tokens",
 )
 
+# Desktop rewrites copied token events just after fork creation; large prefixes
+# can take several seconds to emit, so only the first minute is considered replay.
+_FORK_PREFIX_GRACE = timedelta(minutes=1)
+
 TEXT = {
     "en": {
         "title": "Codex Local Log Usage Report",
+        "fork_audit": "Fork replay audit",
+        "fork_audit_detail": "{forks} forks, {resolved} resolved, {unresolved} unresolved, {excluded} inherited tokens excluded.",
+        "fork_warning": "Warning: unresolved forks are counted without correction because their inherited baseline could not be verified.",
         "window": "Window",
         "sources": "Sources",
         "no_records": "No Codex token_count records found for this window.",
@@ -50,6 +57,9 @@ TEXT = {
         "unavailable": "unavailable",
     },
     "zh": {
+        "fork_audit": "Fork 继承审计",
+        "fork_audit_detail": "{forks} 个 fork，{resolved} 个已解析，{unresolved} 个无法解析，排除 {excluded} 个继承 token。",
+        "fork_warning": "警告：无法解析的 fork 未做扣减，因为其继承基线无法精确验证。",
         "title": "Codex 本地日志用量报告",
         "window": "时间窗口",
         "sources": "数据来源",
@@ -139,6 +149,19 @@ def aggregate_codex_logs(
     model_filter: Optional[str] = None,
 ) -> Dict[str, Any]:
     files = discover_session_files(codex_home=codex_home, include_archived=include_archived)
+    metadata_by_path = {path: read_session_metadata(path) for path in files}
+    path_by_session_id = {
+        metadata["sessionId"]: path
+        for path, metadata in metadata_by_path.items()
+        if metadata.get("sessionId")
+    }
+    events_by_path: Dict[Path, List[Dict[str, Any]]] = {}
+
+    def cached_events(path: Path) -> List[Dict[str, Any]]:
+        if path not in events_by_path:
+            events_by_path[path] = read_token_events(path)
+        return events_by_path[path]
+
     session_rows: List[Dict[str, Any]] = []
     totals = _empty_totals()
     timeline_buckets = _new_timeline_buckets(start, end)
@@ -146,6 +169,10 @@ def aggregate_codex_logs(
     token_event_count = 0
     by_model_totals: Dict[str, Dict[str, int]] = {}
     by_model_session_count: Dict[str, int] = {}
+    fork_session_count = 0
+    resolved_fork_count = 0
+    unresolved_fork_count = 0
+    fork_replay_tokens_excluded = 0
 
     for path in files:
         # Session-level model is used for display and filtering.
@@ -155,23 +182,71 @@ def aggregate_codex_logs(
         if model_filter and session_model != model_filter:
             continue
 
-        events = read_token_events(path)
+        events = cached_events(path)
         if not events:
             continue
+
+        metadata = metadata_by_path[path]
+        forked_from_id = metadata.get("forkedFromId")
+        fork_baseline_status: Optional[str] = None
+        inherited_usage: Optional[Dict[str, int]] = None
+        effective_events = events
+        if forked_from_id:
+            fork_baseline_status, inherited_usage, effective_events = _resolve_fork_events(
+                events,
+                metadata,
+                path_by_session_id,
+                cached_events,
+            )
+
+        raw_before: Optional[Dict[str, Any]] = None
+        raw_in_window: List[Dict[str, Any]] = []
+        for event in events:
+            if event["timestamp"] < start:
+                raw_before = event
+            elif start <= event["timestamp"] <= end:
+                raw_in_window.append(event)
+
         before: Optional[Dict[str, Any]] = None
         in_window: List[Dict[str, Any]] = []
-        for event in events:
+        for event in effective_events:
             if event["timestamp"] < start:
                 before = event
             elif start <= event["timestamp"] <= end:
                 in_window.append(event)
+
+        base_usage = (
+            before["usage"]
+            if before
+            else inherited_usage
+            if fork_baseline_status == "resolved" and inherited_usage
+            else _empty_totals()
+        )
+        corrected_delta = _usage_delta(base_usage, in_window[-1]["usage"]) if in_window else _empty_totals()
+        raw_base_usage = raw_before["usage"] if raw_before else _empty_totals()
+        raw_delta = _usage_delta(raw_base_usage, raw_in_window[-1]["usage"]) if raw_in_window else _empty_totals()
+        replay_excluded = max(raw_delta["total_tokens"] - corrected_delta["total_tokens"], 0)
+
+        created_at = metadata.get("createdAt")
+        fork_is_relevant = bool(
+            forked_from_id
+            and raw_in_window
+            and (created_at is None or created_at <= end)
+        )
+        if fork_is_relevant:
+            fork_session_count += 1
+            fork_replay_tokens_excluded += replay_excluded
+            if fork_baseline_status == "resolved":
+                resolved_fork_count += 1
+            elif fork_baseline_status == "unresolved":
+                unresolved_fork_count += 1
+
         if not in_window:
             continue
 
         first_event = in_window[0]
         last_event = in_window[-1]
-        base_usage = before["usage"] if before else _empty_totals()
-        delta = _usage_delta(base_usage, last_event["usage"])
+        delta = corrected_delta
         previous_usage = base_usage
         token_event_count += len(in_window)
         for key in TOKEN_KEYS:
@@ -204,6 +279,9 @@ def aggregate_codex_logs(
                 "firstEventAt": first_event["timestamp"].isoformat(),
                 "lastEventAt": last_event["timestamp"].isoformat(),
                 "tokenEvents": len(in_window),
+                "forkedFromId": forked_from_id,
+                "forkBaselineStatus": fork_baseline_status,
+                "forkReplayTokensExcluded": replay_excluded,
                 **_public_usage(delta),
                 **_rate_summary_fields(session_rate_events),
             }
@@ -222,6 +300,10 @@ def aggregate_codex_logs(
         "sourceRoot": str(codex_home or default_codex_home()),
         "sessionCount": len(session_rows),
         "tokenEventCount": token_event_count,
+        "forkSessionCount": fork_session_count,
+        "resolvedForkCount": resolved_fork_count,
+        "unresolvedForkCount": unresolved_fork_count,
+        "forkReplayTokensExcluded": fork_replay_tokens_excluded,
         **_public_usage(totals),
         "byModel": by_model,
     }
@@ -290,6 +372,27 @@ def read_token_events(path: Path) -> List[Dict[str, Any]]:
     return events
 
 
+def read_session_metadata(path: Path) -> Dict[str, Any]:
+    """Read only the first session_meta record, which belongs to this file."""
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if "session_meta" not in line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("type") != "session_meta":
+                continue
+            payload = record.get("payload") or {}
+            return {
+                "sessionId": payload.get("id"),
+                "forkedFromId": payload.get("forked_from_id"),
+                "createdAt": _parse_timestamp(payload.get("timestamp") or record.get("timestamp")),
+            }
+    return {"sessionId": None, "forkedFromId": None, "createdAt": None}
+
+
 def read_session_model(path: Path) -> Optional[str]:
     """Extract the model name from the first turn_context event in a session file.
 
@@ -314,6 +417,47 @@ def read_session_model(path: Path) -> Optional[str]:
     return None
 
 
+def _resolve_fork_events(
+    child_events: List[Dict[str, Any]],
+    metadata: Dict[str, Any],
+    path_by_session_id: Dict[str, Path],
+    cached_events: Any,
+) -> Tuple[str, Optional[Dict[str, int]], List[Dict[str, Any]]]:
+    parent_path = path_by_session_id.get(metadata.get("forkedFromId"))
+    created_at = metadata.get("createdAt")
+    if parent_path is None or created_at is None:
+        return "unresolved", None, child_events
+
+    parent_events = cached_events(parent_path)
+    parent_baseline = next(
+        (event for event in reversed(parent_events) if event["timestamp"] <= created_at),
+        None,
+    )
+    if parent_baseline is None:
+        return "unresolved", None, child_events
+
+    prefix_end = created_at + _FORK_PREFIX_GRACE
+    prefix_indexes = [
+        index for index, event in enumerate(child_events) if event["timestamp"] <= prefix_end
+    ]
+    matching_events = [
+        child_events[index]
+        for index in prefix_indexes
+        if _usage_matches(child_events[index]["usage"], parent_baseline["usage"])
+    ]
+    if matching_events:
+        cutoff_line = max(event["lineNumber"] for event in matching_events)
+        effective_events = [event for event in child_events if event["lineNumber"] > cutoff_line]
+        return "resolved", parent_baseline["usage"], effective_events
+    if not prefix_indexes:
+        return "not_replayed", None, child_events
+    return "unresolved", None, child_events
+
+
+def _usage_matches(left: Dict[str, int], right: Dict[str, int]) -> bool:
+    return all(int(left.get(key) or 0) == int(right.get(key) or 0) for key in TOKEN_KEYS)
+
+
 def render_codex_report(report: Dict[str, Any], lang: str = "en") -> str:
     text = TEXT[normalize_lang(lang)]
     summary = report["summary"]
@@ -323,7 +467,16 @@ def render_codex_report(report: Dict[str, Any], lang: str = "en") -> str:
         f"{text['window']}: {summary['windowStart']} -> {summary['windowEnd']}",
         f"{text['sources']}: {summary['sourceRoot']}",
         "",
+        f"{text['fork_audit']}: "
+        + text["fork_audit_detail"].format(
+            forks=summary.get("forkSessionCount", 0),
+            resolved=summary.get("resolvedForkCount", 0),
+            unresolved=summary.get("unresolvedForkCount", 0),
+            excluded=_format_int(summary.get("forkReplayTokensExcluded")),
+        ),
     ]
+    if summary.get("unresolvedForkCount"):
+        lines.extend([text["fork_warning"], ""])
     if summary["sessionCount"] == 0:
         lines.append(text["no_records"])
         return "\n".join(lines)
@@ -422,6 +575,12 @@ def export_codex_report(report: Dict[str, Any], output: Path, fmt: str) -> None:
         "firstEventAt",
         "lastEventAt",
         "tokenEvents",
+        "forkedFromId",
+        "forkBaselineStatus",
+        "forkSessionCount",
+        "resolvedForkCount",
+        "unresolvedForkCount",
+        "forkReplayTokensExcluded",
         "inputTokens",
         "cachedInputTokens",
         "nonCachedInputTokens",

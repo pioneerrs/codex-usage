@@ -10,6 +10,8 @@ from .reporting import normalize_lang, render_table
 TEXT = {
     "en": {
         "title": "Codex Usage Summary",
+        "fork_audit": "Fork replay audit: {forks} forks, {resolved} resolved, {unresolved} unresolved, {excluded} inherited tokens excluded.",
+        "unknown_warning": "Warning: unknown model(s) {models} used the fallback rate card.",
         "window": "Window",
         "source": "Source",
         "overview": "Overview",
@@ -53,6 +55,8 @@ TEXT = {
         "note_window": "Session duration is measured only inside the selected report window.",
     },
     "zh": {
+        "fork_audit": "Fork 继承审计：{forks} 个 fork，{resolved} 个已解析，{unresolved} 个无法解析，排除 {excluded} 个继承 token。",
+        "unknown_warning": "警告：未知模型 {models} 使用了默认费率。",
         "title": "Codex 用量总览",
         "window": "时间窗口",
         "source": "数据来源",
@@ -108,6 +112,7 @@ def build_codex_summary(
     return {
         "usage": usage_report["summary"],
         "cost": cost_report["summary"],
+        "unknownModels": cost_report.get("unknownModels") or [],
         "hotSessions": _hot_sessions(usage_report.get("sessions") or []),
         "charts": {
             "usage": usage_chart_path,
@@ -129,8 +134,17 @@ def render_codex_summary(summary: Dict[str, Any], lang: str = "en") -> str:
         f"{text['window']}: {usage['windowStart']} -> {usage['windowEnd']}",
         f"{text['source']}: {usage['sourceRoot']}",
         "",
+        text["fork_audit"].format(
+            forks=usage.get("forkSessionCount", 0),
+            resolved=usage.get("resolvedForkCount", 0),
+            unresolved=usage.get("unresolvedForkCount", 0),
+            excluded=_format_int(usage.get("forkReplayTokensExcluded")),
+        ),
         text["overview"],
     ]
+    unknown_models = summary.get("unknownModels") or []
+    if unknown_models:
+        lines.insert(-1, text["unknown_warning"].format(models=", ".join(unknown_models)))
     lines.extend(
         render_table(
             [text["total_tokens"], text["cached_input"], text["non_cached_input"], text["output"], text["reasoning"], text["api_cost"], text["credits"]],

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -170,8 +171,8 @@ def build_parser() -> argparse.ArgumentParser:
     codex_chart.add_argument(
         "--output",
         "-o",
-        default="codex-usage.html",
-        help="Output HTML file. Defaults to codex-usage.html.",
+        default=None,
+        help="Output HTML file. Defaults to output/codex-usage-{period}.html.",
     )
     codex_chart.set_defaults(func=cmd_codex_chart)
 
@@ -191,8 +192,8 @@ def build_parser() -> argparse.ArgumentParser:
     codex_cost_chart.add_argument(
         "--output",
         "-o",
-        default="codex-cost.html",
-        help="Output HTML file. Defaults to codex-cost.html.",
+        default=None,
+        help="Output HTML file. Defaults to output/codex-cost-{period}.html.",
     )
     codex_cost_chart.set_defaults(func=cmd_codex_cost_chart)
 
@@ -204,13 +205,13 @@ def build_parser() -> argparse.ArgumentParser:
     add_codex_cost_args(codex_summary)
     codex_summary.add_argument(
         "--usage-output",
-        default="codex-usage.html",
-        help="Usage chart HTML output. Defaults to codex-usage.html.",
+        default=None,
+        help="Usage chart HTML output. Defaults to output/codex-usage-{period}.html.",
     )
     codex_summary.add_argument(
         "--cost-output",
-        default="codex-cost.html",
-        help="Cost chart HTML output. Defaults to codex-cost.html.",
+        default=None,
+        help="Cost chart HTML output. Defaults to output/codex-cost-{period}.html.",
     )
     codex_summary.add_argument(
         "--no-charts",
@@ -244,6 +245,7 @@ def add_codex_log_filters(parser: argparse.ArgumentParser, include_lang: bool = 
     date_group.add_argument("--since", help='Relative time filter, such as "7d", "12h", or "30m".')
     parser.add_argument("--from", dest="from_value", help="Start date, YYYY-MM-DD or ISO timestamp.")
     parser.add_argument("--to", dest="to_value", help="End date, YYYY-MM-DD or ISO timestamp.")
+    parser.add_argument("--model", default=None, help="Only include sessions for this model (e.g., gpt-5.5, gpt-5.4-mini).")
     parser.add_argument("--codex-home", default=str(default_codex_home()), help="Codex home directory.")
     parser.add_argument(
         "--no-archived",
@@ -287,6 +289,11 @@ def add_codex_cost_args(parser: argparse.ArgumentParser) -> None:
         type=float,
         default=DEFAULT_CREDITS_PER_USD,
         help=f"Codex credits per USD for equivalent credits. Defaults to {DEFAULT_CREDITS_PER_USD:g}.",
+    )
+    parser.add_argument(
+        "--flat-rate",
+        action="store_true",
+        help="Use a single flat rate for all models instead of per-model rate cards.",
     )
 
 
@@ -503,7 +510,11 @@ def cmd_codex_chart(args: argparse.Namespace) -> None:
         config = {}
     lang = normalize_lang(args.lang or config.get("defaultLanguage", "auto"))
     report = _codex_report_from_args(args)
-    output = Path(args.output)
+    if args.output is None:
+        period = _derive_period_tag(args)
+        output = _default_output_path("usage", period)
+    else:
+        output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_codex_chart_html(report, lang=lang), encoding="utf-8")
     print(f"{CHART_TEXT[lang]['written']} {output}")
@@ -537,7 +548,11 @@ def cmd_codex_cost_chart(args: argparse.Namespace) -> None:
         config = {}
     lang = normalize_lang(args.lang or config.get("defaultLanguage", "auto"))
     cost_report = _codex_cost_report_from_args(args)
-    output = Path(args.output)
+    if args.output is None:
+        period = _derive_period_tag(args)
+        output = _default_output_path("cost", period)
+    else:
+        output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(render_codex_cost_chart_html(cost_report, lang=lang), encoding="utf-8")
     print(f"{COST_TEXT[lang]['written']} {output}")
@@ -559,16 +574,24 @@ def cmd_codex_summary(args: argparse.Namespace) -> None:
         cached_input_rate_per_m=args.cached_input_rate,
         output_rate_per_m=args.output_rate,
         credits_per_usd=args.credits_per_usd,
+        use_model_rates=not args.flat_rate,
     )
     usage_output = None
     cost_output = None
     if not args.no_charts:
-        usage_path = Path(args.usage_output)
+        period = _derive_period_tag(args)
+        if args.usage_output is None:
+            usage_path = _default_output_path("usage", period)
+        else:
+            usage_path = Path(args.usage_output)
         usage_path.parent.mkdir(parents=True, exist_ok=True)
         usage_path.write_text(render_codex_chart_html(usage_report, lang=lang), encoding="utf-8")
         usage_output = str(usage_path)
 
-        cost_path = Path(args.cost_output)
+        if args.cost_output is None:
+            cost_path = _default_output_path("cost", period)
+        else:
+            cost_path = Path(args.cost_output)
         cost_path.parent.mkdir(parents=True, exist_ok=True)
         cost_path.write_text(render_codex_cost_chart_html(cost_report, lang=lang), encoding="utf-8")
         cost_output = str(cost_path)
@@ -580,6 +603,48 @@ def cmd_codex_summary(args: argparse.Namespace) -> None:
         cost_chart_path=cost_output,
     )
     print(render_codex_summary(summary, lang=lang))
+
+
+def _derive_period_tag(args: argparse.Namespace) -> str:
+    """Derive a short period tag from CLI time-window arguments.
+
+    Examples:
+        --today          → "0607~"  (trailing ~ = open-ended / partial day)
+        --date 2026-06-03 → "0603"  (complete day, no suffix)
+        --since 30d       → "0508~0607"  (resolved to actual date range)
+        --from ... --to … → "0603~0607"
+    """
+    has_today = getattr(args, "today", False)
+    has_since = getattr(args, "since", None)
+    has_from = getattr(args, "from_value", None)
+    has_to = getattr(args, "to_value", None)
+    has_date = getattr(args, "date", None)
+
+    # --today or no time args (defaults to today) → MMDD~ (open-ended)
+    if has_today or not any([has_since, has_from, has_to, has_date]):
+        return datetime.now().strftime("%m%d") + "~"
+
+    # --date YYYY-MM-DD → MMDD (complete day)
+    if has_date:
+        return has_date[5:7] + has_date[8:10]
+
+    # --since / --from / --to → resolve to actual date range MMDD~MMDD
+    start, end = resolve_codex_time_window(
+        today=has_today,
+        date_value=has_date,
+        since=has_since,
+        from_value=has_from,
+        to_value=has_to,
+    )
+    start_tag = start.strftime("%m%d")
+    end_tag = end.strftime("%m%d")
+    return f"{start_tag}~{end_tag}"
+
+
+def _default_output_path(chart_type: str, period: str) -> Path:
+    """Build the default output path: output/codex-{type}-{period}.html"""
+    filename = f"codex-{chart_type}-{period}.html"
+    return Path("output") / filename
 
 
 def _codex_report_from_args(args: argparse.Namespace) -> Dict[str, Any]:
@@ -595,6 +660,7 @@ def _codex_report_from_args(args: argparse.Namespace) -> Dict[str, Any]:
         end=end,
         codex_home=Path(args.codex_home),
         include_archived=not args.no_archived,
+        model_filter=getattr(args, "model", None),
     )
 
 
@@ -608,6 +674,7 @@ def _codex_cost_report_from_args(args: argparse.Namespace) -> Dict[str, Any]:
         cached_input_rate_per_m=args.cached_input_rate,
         output_rate_per_m=args.output_rate,
         credits_per_usd=args.credits_per_usd,
+        use_model_rates=not args.flat_rate,
     )
 
 

@@ -184,6 +184,24 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["summary"]["secondaryUsedPercentLatest"], 11)
         self.assertEqual(sum(row["totalTokens"] for row in payload["timeline"]), 220)
 
+        code, out, err = self.run_cli(
+            "codex",
+            "export",
+            "--date",
+            "2026-05-10",
+            "--codex-home",
+            str(codex_home),
+            "--format",
+            "csv",
+            "--output",
+            "codex.csv",
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("Exported 1 Codex session row", out)
+        csv_text = Path("codex.csv").read_text(encoding="utf-8")
+        self.assertIn("forkBaselineStatus", csv_text)
+        self.assertIn("forkReplayTokensExcluded", csv_text)
+
         code, report, err = self.run_cli(
             "codex",
             "report",

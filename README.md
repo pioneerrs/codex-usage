@@ -180,7 +180,7 @@ Windows:
 %USERPROFILE%\.codex\archived_sessions\*.jsonl
 ```
 
-The `codex` commands read `token_count` events from these files.
+The `codex` commands read `token_count` events from these files. Forked sessions can contain a copied prefix of the parent's cumulative counters. When all five token fields exactly match the parent's last counter at fork time, that inherited prefix is excluded from sessions, events, timelines, rate-limit snapshots, and per-model totals. Missing parents or mismatched copied counters are left uncorrected and reported as unresolved instead of being guessed.
 
 If your Codex home is elsewhere:
 
@@ -203,11 +203,13 @@ codex-usage codex cost-chart --today --output cost.html
 
 The chart command writes a static HTML file with inline SVG charts. It does not require Node.js, a browser server, or external CDN assets.
 
-`summary` prints token, cost, rate-limit, and hot-session highlights and writes `codex-usage.html` plus `codex-cost.html` by default. Terminal-only output:
+`summary` prints token, cost, rate-limit, and hot-session highlights and writes usage and cost charts to the `output/` directory by default. Files are named with timestamps to prevent overwriting (e.g., `codex-usage-20260603-064255.html`). Terminal-only output:
 
 ```bash
 codex-usage codex summary --today --no-charts
 ```
+
+**Output Directory**: All HTML charts are saved to the `output/` directory by default. Each file includes a timestamp in its filename to prevent overwriting previous results. You can still specify a custom output path with the `--output` flag.
 
 ## Cost Estimates
 
@@ -217,16 +219,16 @@ codex-usage codex cost --today --json
 codex-usage codex cost-chart --today --output cost.html
 ```
 
-Cost estimates default to a GPT-5.5-style rate card:
+When model tracking is available, cost estimates use these API-equivalent rate cards (non-cached input / cached input / output, USD per 1M tokens):
 
 ```text
-non-cached input: $5 / 1M tokens
-cached input: $0.5 / 1M tokens
-output: $30 / 1M tokens
-Codex credits: 25 credits / $1
+gpt-5.6, gpt-5.6-sol:  $5 / $0.5 / $30
+gpt-5.6-terra:         $2.5 / $0.25 / $15
+gpt-5.6-luna:          $1 / $0.1 / $6
+Codex Credits = API-equivalent USD x 25
 ```
 
-Override rates when the model or rate card changes:
+Unknown models use the GPT-5.5 fallback rate card and are listed in terminal and JSON output. Use `--flat-rate` with the rate flags to override per-model pricing:
 
 ```bash
 codex-usage codex cost --today \
@@ -236,7 +238,7 @@ codex-usage codex cost --today \
   --credits-per-usd 25
 ```
 
-Cost output is an API-equivalent estimate from local Codex `token_count` logs, not a subscription bill. Reasoning tokens are displayed for context and are already included in output tokens, so they are not billed again.
+These are four separate metrics: token usage is the local log count; API-equivalent USD applies the table above; Codex Credits are an equivalent conversion using `--credits-per-usd` (default `25`); subscription limits are the observed primary/secondary percentages. Neither USD nor Credits is a subscription bill. Reasoning tokens are already included in output tokens and are not billed again. The estimator intentionally does not apply API-only long-context, Priority, or Fast-mode multipliers.
 
 ## Troubleshooting
 

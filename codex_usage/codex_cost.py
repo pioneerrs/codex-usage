@@ -15,10 +15,67 @@ DEFAULT_CACHED_INPUT_RATE_PER_M = 0.5
 DEFAULT_OUTPUT_RATE_PER_M = 30.0
 DEFAULT_CREDITS_PER_USD = 25.0
 
+MODEL_RATE_CARD = {
+    "gpt-5.6": {
+        "input_rate_per_m": 5.0,
+        "cached_input_rate_per_m": 0.5,
+        "output_rate_per_m": 30.0,
+    },
+    "gpt-5.6-sol": {
+        "input_rate_per_m": 5.0,
+        "cached_input_rate_per_m": 0.5,
+        "output_rate_per_m": 30.0,
+    },
+    "gpt-5.6-terra": {
+        "input_rate_per_m": 2.5,
+        "cached_input_rate_per_m": 0.25,
+        "output_rate_per_m": 15.0,
+    },
+    "gpt-5.6-luna": {
+        "input_rate_per_m": 1.0,
+        "cached_input_rate_per_m": 0.1,
+        "output_rate_per_m": 6.0,
+    },
+    "gpt-5.5": {
+        "input_rate_per_m": 5.0,
+        "cached_input_rate_per_m": 0.5,
+        "output_rate_per_m": 30.0,
+    },
+    "gpt-5.4": {
+        "input_rate_per_m": 2.5,
+        "cached_input_rate_per_m": 0.25,
+        "output_rate_per_m": 15.0,
+    },
+    "gpt-5.4-mini": {
+        "input_rate_per_m": 0.75,
+        "cached_input_rate_per_m": 0.075,
+        "output_rate_per_m": 4.5,
+    },
+    "gpt-5.3-codex-spark": {
+        "input_rate_per_m": 0.0,
+        "cached_input_rate_per_m": 0.0,
+        "output_rate_per_m": 0.0,
+    },
+    "codex-auto-review": {
+        "input_rate_per_m": 2.5,
+        "cached_input_rate_per_m": 0.25,
+        "output_rate_per_m": 15.0,
+    },
+}
+
+
+def get_model_rate_card(model: str) -> Dict[str, float]:
+    """Return the rate card for the given model.
+
+    Falls back to the gpt-5.5 rate card if the model is not found.
+    """
+    return MODEL_RATE_CARD.get(model, MODEL_RATE_CARD["gpt-5.5"])
+
 
 TEXT = {
     "en": {
         "title": "Codex API-Equivalent Cost Estimate",
+        "unknown_warning": "Warning: unknown model(s) {models} used the gpt-5.5 fallback rate card.",
         "window": "Window",
         "source": "Source",
         "pricing": "Pricing",
@@ -44,8 +101,12 @@ TEXT = {
         "note_reasoning": "Reasoning tokens are displayed for context and are already included in output tokens, so they are not billed again.",
         "note_rates": "Use rate flags to update pricing when the model or rate card changes.",
         "written": "Wrote Codex cost chart to",
+        "by_model": "By Model",
+        "model": "Model",
+        "model_rate_card": "Rate Card",
     },
     "zh": {
+        "unknown_warning": "警告：未知模型 {models} 使用了 gpt-5.5 默认费率。",
         "title": "Codex API 等价费用估算",
         "window": "时间窗口",
         "source": "数据来源",
@@ -72,6 +133,9 @@ TEXT = {
         "note_reasoning": "Reasoning token 只做展示，已经包含在 output 口径里，不重复计费。",
         "note_rates": "模型或 rate card 变化时，可以通过费率参数调整单价。",
         "written": "已写入 Codex 费用图表:",
+        "by_model": "按模型分组",
+        "model": "Model",
+        "model_rate_card": "费率卡",
     },
 }
 
@@ -93,6 +157,7 @@ def build_codex_cost_report(
     cached_input_rate_per_m: float = DEFAULT_CACHED_INPUT_RATE_PER_M,
     output_rate_per_m: float = DEFAULT_OUTPUT_RATE_PER_M,
     credits_per_usd: float = DEFAULT_CREDITS_PER_USD,
+    use_model_rates: bool = True,
 ) -> Dict[str, Any]:
     summary = usage_report["summary"]
     line_items = [
@@ -119,7 +184,7 @@ def build_codex_cost_report(
     total_credits = total_cost * credits_per_usd
     total_billable_tokens = sum(item["tokens"] for item in line_items)
 
-    return {
+    result: Dict[str, Any] = {
         "summary": {
             "windowStart": summary.get("windowStart"),
             "windowEnd": summary.get("windowEnd"),
@@ -140,26 +205,82 @@ def build_codex_cost_report(
             },
         },
         "lineItems": line_items,
+        "unknownModels": [],
     }
+
+    by_model_usage = summary.get("byModel") or {}
+    if use_model_rates and by_model_usage:
+        by_model_cost: Dict[str, Dict[str, Any]] = {}
+        unknown_models: List[str] = []
+        for model, model_data in sorted(by_model_usage.items()):
+            rate_card = get_model_rate_card(model)
+            rate_card_matched = model in MODEL_RATE_CARD
+            if not rate_card_matched:
+                unknown_models.append(model)
+            model_input = int(model_data.get("nonCachedInputTokens") or 0)
+            model_cached = int(model_data.get("cachedInputTokens") or 0)
+            model_output = int(model_data.get("outputTokens") or 0)
+            model_line_items = [
+                _line_item("non_cached_input", model_input, rate_card["input_rate_per_m"], credits_per_usd),
+                _line_item("cached_input", model_cached, rate_card["cached_input_rate_per_m"], credits_per_usd),
+                _line_item("output", model_output, rate_card["output_rate_per_m"], credits_per_usd),
+            ]
+            model_cost = sum(item["costUSD"] for item in model_line_items)
+            model_credits = model_cost * credits_per_usd
+            by_model_cost[model] = {
+                "modelLabel": model,
+                "sessionCount": int(model_data.get("sessionCount") or 0),
+                "totalTokens": int(model_data.get("totalTokens") or 0),
+                "billableTokens": model_input + model_cached + model_output,
+                "totalCostUSD": model_cost,
+                "totalCredits": model_credits,
+                "rateCardMatched": rate_card_matched,
+                "ratesPerMillion": {
+                    "input": rate_card["input_rate_per_m"],
+                    "cachedInput": rate_card["cached_input_rate_per_m"],
+                    "output": rate_card["output_rate_per_m"],
+                },
+                "lineItems": model_line_items,
+            }
+        result["byModel"] = by_model_cost
+        result["unknownModels"] = unknown_models
+
+        # Override the global summary cost with the sum of per-model costs
+        total_cost_by_model = sum(m["totalCostUSD"] for m in by_model_cost.values())
+        total_credits_by_model = total_cost_by_model * credits_per_usd
+        result["summary"]["totalCostUSD"] = total_cost_by_model
+        result["summary"]["totalCredits"] = total_credits_by_model
+        # Update line items to reflect per-model cost aggregation
+        result["lineItems"] = _aggregate_line_items_from_models(by_model_cost)
+
+    return result
 
 
 def render_codex_cost_report(cost_report: Dict[str, Any], lang: str = "en") -> str:
     text = TEXT[normalize_lang(lang)]
     summary = cost_report["summary"]
     line_items = cost_report["lineItems"]
+    by_model_cost = cost_report.get("byModel") or {}
+    if by_model_cost:
+        pricing_line = f"{text['pricing']}: {text['by_model'].lower()}"
+    else:
+        pricing_line = (
+            f"{text['pricing']}: {summary['modelLabel']} "
+            f"(input ${summary['ratesPerMillion']['input']:g}/1M, "
+            f"cached input ${summary['ratesPerMillion']['cachedInput']:g}/1M, "
+            f"output ${summary['ratesPerMillion']['output']:g}/1M)"
+        )
     lines = [
         text["title"],
         "",
         f"{text['window']}: {summary['windowStart']} -> {summary['windowEnd']}",
         f"{text['source']}: {summary['sourceRoot']}",
-        (
-            f"{text['pricing']}: {summary['modelLabel']} "
-            f"(input ${summary['ratesPerMillion']['input']:g}/1M, "
-            f"cached input ${summary['ratesPerMillion']['cachedInput']:g}/1M, "
-            f"output ${summary['ratesPerMillion']['output']:g}/1M)"
-        ),
+        pricing_line,
         "",
     ]
+    unknown_models = cost_report.get("unknownModels") or []
+    if unknown_models:
+        lines.extend([text["unknown_warning"].format(models=", ".join(unknown_models)), ""])
 
     lines.extend(
         render_table(
@@ -168,7 +289,7 @@ def render_codex_cost_report(cost_report: Dict[str, Any], lang: str = "en") -> s
                 [
                     text[item["type"]],
                     _format_int(item["tokens"]),
-                    f"${item['ratePerMillion']:g} / 1M",
+                    f"${item['ratePerMillion']:g} / 1M" if item["ratePerMillion"] > 0 else "(mixed)",
                     _format_money(item["costUSD"]),
                     _format_credits(item["credits"]),
                 ]
@@ -185,6 +306,31 @@ def render_codex_cost_report(cost_report: Dict[str, Any], lang: str = "en") -> s
             ],
         )
     )
+
+    if by_model_cost:
+        lines.extend(
+            [
+                "",
+                text["by_model"],
+                *render_table(
+                    [text["model"], text["model_rate_card"], text["cost"], text["credits"]],
+                    [
+                        [
+                            model,
+                            (
+                                f"in:${data['ratesPerMillion']['input']:g} "
+                                f"ci:${data['ratesPerMillion']['cachedInput']:g} "
+                                f"out:${data['ratesPerMillion']['output']:g}"
+                            ),
+                            _format_money(data["totalCostUSD"]),
+                            _format_credits(data["totalCredits"]),
+                        ]
+                        for model, data in sorted(by_model_cost.items())
+                    ],
+                ),
+            ]
+        )
+
     lines.extend(
         [
             "",
@@ -213,6 +359,14 @@ def render_codex_cost_chart_html(cost_report: Dict[str, Any], lang: str = "en") 
     summary = cost_report["summary"]
     line_items = cost_report["lineItems"]
     generated = datetime.now().astimezone().isoformat(timespec="seconds")
+    by_model = cost_report.get("byModel") or {}
+
+    sections = [
+        _section(text["cost_mix"], _cost_mix_svg(line_items, text)),
+        _section(text["details"], _cost_table(line_items, summary, text)),
+    ]
+    if by_model:
+        sections.insert(1, _section(text["by_model"], _cost_by_model_section(by_model, text)))
 
     return "\n".join(
         [
@@ -238,8 +392,7 @@ def render_codex_cost_chart_html(cost_report: Dict[str, Any], lang: str = "en") 
             f"<div><span>{escape('Generated')}</span>{escape(generated)}</div>",
             "</div>",
             "</header>",
-            _section(text["cost_mix"], _cost_mix_svg(line_items, text)),
-            _section(text["details"], _cost_table(line_items, summary, text)),
+            *sections,
             _section(text["notes"], _notes(text)),
             "</main>",
             "</body>",
@@ -247,6 +400,32 @@ def render_codex_cost_chart_html(cost_report: Dict[str, Any], lang: str = "en") 
             "",
         ]
     )
+
+
+def _aggregate_line_items_from_models(by_model_cost: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Aggregate per-model line items into global line items (sum of costs across models)."""
+    from collections import defaultdict
+
+    by_type: Dict[str, Dict[str, float]] = defaultdict(lambda: {"tokens": 0, "costUSD": 0.0, "credits": 0.0})
+    for model_data in by_model_cost.values():
+        for item in model_data.get("lineItems") or []:
+            bucket = by_type[item["type"]]
+            bucket["tokens"] += item["tokens"]
+            bucket["costUSD"] += item["costUSD"]
+            bucket["credits"] += item["credits"]
+    result = []
+    for item_type in ("non_cached_input", "cached_input", "output"):
+        bucket = by_type[item_type]
+        result.append(
+            {
+                "type": item_type,
+                "tokens": int(bucket["tokens"]),
+                "ratePerMillion": 0.0,  # No single rate when mixing models
+                "costUSD": bucket["costUSD"],
+                "credits": bucket["credits"],
+            }
+        )
+    return result
 
 
 def _line_item(item_type: str, tokens: int, rate_per_million: float, credits_per_usd: float) -> Dict[str, Any]:
@@ -445,6 +624,80 @@ def _cost_table(line_items: List[Dict[str, Any]], summary: Dict[str, Any], text:
             "</table>",
         ]
     )
+
+
+def _cost_by_model_section(by_model: Dict[str, Dict[str, Any]], text: Dict[str, str]) -> str:
+    """Render the 'Cost by Model' section with a bar chart and table."""
+    max_cost = max((float(m["totalCostUSD"]) for m in by_model.values()), default=0.0)
+    if max_cost <= 0:
+        max_cost = 1.0
+
+    model_colors = ["#0f766e", "#2563eb", "#f59e0b", "#dc2626", "#7c3aed", "#4f46e5", "#059669"]
+    width = 920
+    left = 150
+    top = 28
+    row_h = 58
+    chart_w = 700
+    parts = [
+        f'<svg class="chart" viewBox="0 0 {width} {top + len(by_model) * row_h + 40}" role="img" aria-label="{escape(text["by_model"])}">'
+    ]
+    labels = []
+    for index, (model, data) in enumerate(sorted(by_model.items())):
+        y = top + index * row_h
+        color = model_colors[index % len(model_colors)]
+        bar_w = chart_w * float(data["totalCostUSD"]) / max_cost
+        parts.extend(
+            [
+                f'<text x="22" y="{y + 22}" fill="{COLORS["text"]}" font-size="15">{escape(model)}</text>',
+                f'<rect x="{left}" y="{y}" width="{bar_w:.2f}" height="30" rx="4" fill="{color}" />',
+                f'<text x="{min(left + bar_w + 12, width - 22):.2f}" y="{y + 21}" fill="{COLORS["text"]}" font-size="15">{escape(_format_money(data["totalCostUSD"]))}</text>',
+            ]
+        )
+        labels.append(
+            f'<span><i style="background:{color}"></i>{escape(model)}: {escape(_format_money(data["totalCostUSD"]))} ({escape(_format_credits(data["totalCredits"]))} credits)</span>'
+        )
+    parts.append("</svg>")
+    parts.append('<div class="legend">' + "".join(labels) + "</div>")
+
+    # Table
+    table_rows = []
+    for model, data in sorted(by_model.items()):
+        rates = data.get("ratesPerMillion") or {}
+        rate_text = (
+            f"in:${rates.get('input', 0):g} "
+            f"ci:${rates.get('cachedInput', 0):g} "
+            f"out:${rates.get('output', 0):g}"
+        )
+        table_rows.append(
+            "<tr>"
+            f"<td>{escape(model)}</td>"
+            f"<td>{escape(str(data.get('sessionCount') or 0))}</td>"
+            f"<td>{escape(_format_int(data.get('totalTokens') or 0))}</td>"
+            f"<td>{escape(rate_text)}</td>"
+            f"<td>{escape(_format_money(data.get('totalCostUSD') or 0))}</td>"
+            f"<td>{escape(_format_credits(data.get('totalCredits') or 0))}</td>"
+            "</tr>"
+        )
+
+    table = "\n".join(
+        [
+            "<table>",
+            "<thead><tr>"
+            f"<th>{escape(text['model'])}</th>"
+            f"<th>{escape(text['sessions'])}</th>"
+            f"<th>{escape(text['total_tokens'])}</th>"
+            f"<th>{escape(text['model_rate_card'])}</th>"
+            f"<th>{escape(text['cost'])}</th>"
+            f"<th>{escape(text['credits'])}</th>"
+            "</tr></thead>",
+            "<tbody>",
+            *table_rows,
+            "</tbody>",
+            "</table>",
+        ]
+    )
+
+    return "\n".join(parts) + "\n" + table
 
 
 def _notes(text: Dict[str, str]) -> str:

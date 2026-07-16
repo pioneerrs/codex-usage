@@ -38,6 +38,13 @@ TEXT = {
         "note_cached": "Cached input is included in input.",
         "note_reasoning": "Reasoning is shown separately; it is not added again to the token mix.",
         "written": "Wrote Codex usage chart to",
+        "by_model": "Usage by Model",
+        "model": "Model",
+        "model_sessions": "Sessions",
+        "model_input": "Input",
+        "model_cached": "Cached Input",
+        "model_output": "Output",
+        "model_total": "Total",
     },
     "zh": {
         "title": "Codex 用量图表",
@@ -69,6 +76,13 @@ TEXT = {
         "note_cached": "Cached Input 是 Input 的子集。",
         "note_reasoning": "Reasoning 单独展示，不会在 Token 构成里重复相加。",
         "written": "已写入 Codex 用量图表:",
+        "by_model": "按模型用量",
+        "model": "Model",
+        "model_sessions": "Sessions",
+        "model_input": "Input",
+        "model_cached": "Cached Input",
+        "model_output": "Output",
+        "model_total": "Total",
     },
 }
 
@@ -100,6 +114,7 @@ def render_codex_chart_html(report: Dict[str, Any], lang: str = "en") -> str:
             [
                 _section(text["summary"], _summary_cards(summary, text)),
                 _section(text["token_mix"], _token_mix_svg(summary, text)),
+                _section(text["by_model"], _by_model_usage_section(summary.get("byModel") or {}, text)),
                 _section(text["timeline"], _timeline_svg(report.get("timeline") or [], text)),
                 _section(text["rate_limits"], _rate_svg(report.get("timeline") or [], text)),
                 _section(text["session_ranking"], _session_table(report.get("sessions") or [], text)),
@@ -487,6 +502,78 @@ def _session_table(sessions: Sequence[Dict[str, Any]], text: Dict[str, str]) -> 
             "</table>",
         ]
     )
+
+
+def _by_model_usage_section(by_model: Dict[str, Dict[str, Any]], text: Dict[str, str]) -> str:
+    """Render the Usage by Model section with a horizontal bar chart and table."""
+    if not by_model:
+        return ""
+
+    max_total = max((int(m.get("totalTokens") or 0) for m in by_model.values()), default=1)
+    if max_total <= 0:
+        max_total = 1
+
+    model_colors = ["#0f766e", "#2563eb", "#f59e0b", "#dc2626", "#7c3aed", "#4f46e5", "#059669"]
+    width = 920
+    left = 150
+    top = 28
+    row_h = 58
+    chart_w = 700
+    parts = [
+        f"""<svg class="chart" viewBox="0 0 {width} {top + len(by_model) * row_h + 40}" role="img" aria-label="{escape(text['by_model'])}">"""
+    ]
+    labels = []
+    for index, (model, data) in enumerate(sorted(by_model.items())):
+        y = top + index * row_h
+        color = model_colors[index % len(model_colors)]
+        total_tokens = int(data.get("totalTokens") or 0)
+        bar_w = chart_w * total_tokens / max_total
+        parts.extend(
+            [
+                f'<text x="22" y="{y + 22}" fill="{COLORS["text"]}" font-size="15">{escape(model)}</text>',
+                f'<rect x="{left}" y="{y}" width="{bar_w:.2f}" height="30" rx="4" fill="{color}" />',
+                f'<text x="{min(left + bar_w + 12, width - 22):.2f}" y="{y + 21}" fill="{COLORS["text"]}" font-size="15">{escape(_format_int(total_tokens))}</text>',
+            ]
+        )
+        labels.append(
+            f'<span><i style="background:{color}"></i>{escape(model)}: {escape(_format_int(total_tokens))}</span>'
+        )
+    parts.append("</svg>")
+    parts.append('<div class="legend">' + "".join(labels) + "</div>")
+
+    # Table
+    table_rows = []
+    for model, data in sorted(by_model.items()):
+        table_rows.append(
+            "<tr>"
+            f"<td>{escape(model)}</td>"
+            f"<td>{escape(str(data.get('sessionCount') or 0))}</td>"
+            f"<td>{escape(_format_int(data.get('inputTokens') or 0))}</td>"
+            f"<td>{escape(_format_int(data.get('cachedInputTokens') or 0))}</td>"
+            f"<td>{escape(_format_int(data.get('outputTokens') or 0))}</td>"
+            f"<td>{escape(_format_int(data.get('totalTokens') or 0))}</td>"
+            "</tr>"
+        )
+
+    table = "\n".join(
+        [
+            "<table>",
+            "<thead><tr>"
+            f"<th>{escape(text['model'])}</th>"
+            f"<th>{escape(text['model_sessions'])}</th>"
+            f"<th>{escape(text['model_input'])}</th>"
+            f"<th>{escape(text['model_cached'])}</th>"
+            f"<th>{escape(text['model_output'])}</th>"
+            f"<th>{escape(text['model_total'])}</th>"
+            "</tr></thead>",
+            "<tbody>",
+            *table_rows,
+            "</tbody>",
+            "</table>",
+        ]
+    )
+
+    return "\n".join(parts) + "\n" + table
 
 
 def _notes(text: Dict[str, str]) -> str:
