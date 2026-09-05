@@ -16,3 +16,6 @@ dependencies = [
 
 [project.scripts]
 codex-usage = "codex_usage.cli:entrypoint"
+
+[tool.setuptools.packages.find]
+include = ["codex_usage", "codex_usage.*"]
