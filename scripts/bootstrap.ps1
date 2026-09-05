@@ -30,11 +30,23 @@ if (-not $PythonExe) {
 
 if (-not (Test-Path $VenvPython)) {
     & $PythonExe @PythonArgs -m venv $VenvDir
+    if ($LASTEXITCODE -ne 0) {
+        throw "Virtual environment creation failed (exit code $LASTEXITCODE)."
+    }
 }
 
 & $VenvPython -m pip install --upgrade pip | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    throw "pip upgrade failed (exit code $LASTEXITCODE)."
+}
 & $VenvPython -m pip install -e .
+if ($LASTEXITCODE -ne 0) {
+    throw "Package installation failed (exit code $LASTEXITCODE)."
+}
 & $VenvPython -m codex_usage doctor
+if ($LASTEXITCODE -ne 0) {
+    throw "Runtime check failed (exit code $LASTEXITCODE)."
+}
 
 Write-Host ""
 Write-Host "Bootstrap complete."
