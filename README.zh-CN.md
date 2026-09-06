@@ -225,9 +225,10 @@ codex-usage codex cost-chart --today --lang zh --output cost.html
 能够追踪模型时，费用估算会使用以下 API 等价费率（依次为非缓存 input / cached input / output，单位为每百万 token 的美元）：
 
 ```text
-gpt-5.6、gpt-5.6-sol: $5 / $0.5 / $30
-gpt-5.6-terra:        $2.5 / $0.25 / $15
-gpt-5.6-luna:         $1 / $0.1 / $6
+gpt-6-astra:           $10 / $1 / $50
+gpt-5.6、gpt-5.6-sol: $4 / $0.4 / $20
+gpt-5.6-terra:        $2 / $0.2 / $12
+gpt-5.6-luna:         $0.2 / $0.02 / $1.2
 gpt-5.3-codex:        $1.75 / $0.175 / $14
 gpt-5.2:              $1.75 / $0.175 / $14
 Codex Credits = API 等价美元 x 25

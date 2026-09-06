@@ -1,4 +1,4 @@
-"""Regression tests for GPT-5.6 rate cards and Credits estimates."""
+"""Regression tests for current Codex rate cards and Credits estimates."""
 
 import unittest
 
@@ -37,12 +37,13 @@ def one_million_each():
 
 
 class CostModelTests(unittest.TestCase):
-    def test_gpt_5_6_rate_cards(self):
+    def test_current_frontier_rate_cards(self):
         expected = {
-            "gpt-5.6": (5.0, 0.5, 30.0),
-            "gpt-5.6-sol": (5.0, 0.5, 30.0),
-            "gpt-5.6-terra": (2.5, 0.25, 15.0),
-            "gpt-5.6-luna": (1.0, 0.1, 6.0),
+            "gpt-6-astra": (10.0, 1.0, 50.0),
+            "gpt-5.6": (4.0, 0.4, 20.0),
+            "gpt-5.6-sol": (4.0, 0.4, 20.0),
+            "gpt-5.6-terra": (2.0, 0.2, 12.0),
+            "gpt-5.6-luna": (0.2, 0.02, 1.2),
         }
         for model, rates in expected.items():
             with self.subTest(model=model):
@@ -63,19 +64,32 @@ class CostModelTests(unittest.TestCase):
                 self.assertEqual(card["rate_card_status"], "priced")
                 self.assertEqual(card["rate_card_source"], "openai-official")
 
+    def test_single_model_summary_uses_matched_rate_card(self):
+        report = build_codex_cost_report(usage_summary({"gpt-6-astra": one_million_each()}))
+
+        self.assertEqual(report["summary"]["modelLabel"], "gpt-6-astra")
+        self.assertEqual(
+            report["summary"]["ratesPerMillion"],
+            {"input": 10.0, "cachedInput": 1.0, "output": 50.0},
+        )
+        self.assertEqual(report["summary"]["rateCardStatus"], "priced")
+        self.assertEqual(report["unknownModels"], [])
+
     def test_per_model_costs_and_default_credits(self):
         by_model = {
+            "gpt-6-astra": one_million_each(),
             "gpt-5.6-sol": one_million_each(),
             "gpt-5.6-terra": one_million_each(),
             "gpt-5.6-luna": one_million_each(),
         }
         report = build_codex_cost_report(usage_summary(by_model))
-        self.assertAlmostEqual(report["byModel"]["gpt-5.6-sol"]["totalCostUSD"], 35.5)
-        self.assertAlmostEqual(report["byModel"]["gpt-5.6-terra"]["totalCostUSD"], 17.75)
-        self.assertAlmostEqual(report["byModel"]["gpt-5.6-luna"]["totalCostUSD"], 7.1)
-        self.assertAlmostEqual(report["summary"]["totalCostUSD"], 60.35)
+        self.assertAlmostEqual(report["byModel"]["gpt-6-astra"]["totalCostUSD"], 61.0)
+        self.assertAlmostEqual(report["byModel"]["gpt-5.6-sol"]["totalCostUSD"], 24.4)
+        self.assertAlmostEqual(report["byModel"]["gpt-5.6-terra"]["totalCostUSD"], 14.2)
+        self.assertAlmostEqual(report["byModel"]["gpt-5.6-luna"]["totalCostUSD"], 1.42)
+        self.assertAlmostEqual(report["summary"]["totalCostUSD"], 101.02)
         self.assertEqual(report["summary"]["creditsPerUSD"], 25.0)
-        self.assertAlmostEqual(report["summary"]["totalCredits"], 60.35 * 25)
+        self.assertAlmostEqual(report["summary"]["totalCredits"], 101.02 * 25)
 
     def test_custom_credits_multiplier(self):
         report = build_codex_cost_report(
@@ -132,9 +146,9 @@ class CostModelTests(unittest.TestCase):
         report = build_codex_cost_report(usage_summary({"gpt-5.6-sol": usage}))
         summary = report["summary"]
 
-        self.assertAlmostEqual(summary["totalCostUSD"], 35.5)
-        self.assertAlmostEqual(summary["verifiedCostUSD"], 17.75)
-        self.assertAlmostEqual(summary["unverifiedCostUSD"], 17.75)
+        self.assertAlmostEqual(summary["totalCostUSD"], 24.4)
+        self.assertAlmostEqual(summary["verifiedCostUSD"], 12.2)
+        self.assertAlmostEqual(summary["unverifiedCostUSD"], 12.2)
         self.assertEqual(summary["totalCredits"], summary["totalCostUSD"] * 25)
         self.assertEqual(summary["verifiedCredits"], summary["verifiedCostUSD"] * 25)
         self.assertEqual(summary["unverifiedCredits"], summary["unverifiedCostUSD"] * 25)

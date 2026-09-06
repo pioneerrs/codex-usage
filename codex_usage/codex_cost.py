@@ -14,28 +14,33 @@ DEFAULT_INPUT_RATE_PER_M = 5.0
 DEFAULT_CACHED_INPUT_RATE_PER_M = 0.5
 DEFAULT_OUTPUT_RATE_PER_M = 30.0
 DEFAULT_CREDITS_PER_USD = 25.0
-RATE_CARD_AS_OF = "2026-07-17"
+RATE_CARD_AS_OF = "2026-09-07"
 
 MODEL_RATE_CARD = {
+    "gpt-6-astra": {
+        "input_rate_per_m": 10.0,
+        "cached_input_rate_per_m": 1.0,
+        "output_rate_per_m": 50.0,
+    },
     "gpt-5.6": {
-        "input_rate_per_m": 5.0,
-        "cached_input_rate_per_m": 0.5,
-        "output_rate_per_m": 30.0,
+        "input_rate_per_m": 4.0,
+        "cached_input_rate_per_m": 0.4,
+        "output_rate_per_m": 20.0,
     },
     "gpt-5.6-sol": {
-        "input_rate_per_m": 5.0,
-        "cached_input_rate_per_m": 0.5,
-        "output_rate_per_m": 30.0,
+        "input_rate_per_m": 4.0,
+        "cached_input_rate_per_m": 0.4,
+        "output_rate_per_m": 20.0,
     },
     "gpt-5.6-terra": {
-        "input_rate_per_m": 2.5,
-        "cached_input_rate_per_m": 0.25,
-        "output_rate_per_m": 15.0,
+        "input_rate_per_m": 2.0,
+        "cached_input_rate_per_m": 0.2,
+        "output_rate_per_m": 12.0,
     },
     "gpt-5.6-luna": {
-        "input_rate_per_m": 1.0,
-        "cached_input_rate_per_m": 0.1,
-        "output_rate_per_m": 6.0,
+        "input_rate_per_m": 0.2,
+        "cached_input_rate_per_m": 0.02,
+        "output_rate_per_m": 1.2,
     },
     "gpt-5.5": {
         "input_rate_per_m": 5.0,
@@ -363,6 +368,10 @@ def build_codex_cost_report(
         result["summary"]["rateCardStatus"] = next(iter(statuses)) if len(statuses) == 1 else "mixed"
         result["summary"]["rateCardSource"] = next(iter(sources)) if len(sources) == 1 else "mixed"
         result["summary"]["rateCardAsOf"] = RATE_CARD_AS_OF
+        if len(by_model_cost) == 1:
+            single_model = next(iter(by_model_cost.values()))
+            result["summary"]["modelLabel"] = single_model["modelLabel"]
+            result["summary"]["ratesPerMillion"] = dict(single_model["ratesPerMillion"])
         # Update line items to reflect per-model cost aggregation
         result["lineItems"] = _aggregate_line_items_from_models(by_model_cost)
 
